@@ -29,7 +29,7 @@ export const CheckoutPage = () => {
 
       try {
         // Automatically request the Vult payment link from your backend
-        const { data, apiError } = await supabaseClient.functions.invoke("payment-processor", {
+        const { data, error: functionError } = await supabaseClient.functions.invoke("payment-processor", {
           body: {
             amount: parseFloat(invoiceAmount),
             currency,
@@ -38,8 +38,14 @@ export const CheckoutPage = () => {
           },
         });
 
-        if (apiError) throw apiError;
+        if (functionError) throw functionError;
+        
         const result = typeof data === "string" ? JSON.parse(data) : data;
+
+        // Safely check if the API response itself returned an error property
+        if (result?.apiError) {
+          throw result.apiError;
+        }
 
         if (result?.success === false) {
           throw new Error(result.error || "Gateway rejected order request.");
@@ -52,7 +58,7 @@ export const CheckoutPage = () => {
           throw new Error("No checkout URL returned from Vult.");
         }
       } catch (err: any) {
-        setError(err.message);
+        setError(err.message || String(err));
       }
     };
 
