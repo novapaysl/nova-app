@@ -20,10 +20,14 @@ type Wallet = {
   wallet_status: string;
 };
 
+// 🚀 UPDATED: Added the new columns from our SQL fix
 type Profile = {
   id: string;
   full_name: string;
   account_status: string;
+  sle_balance?: number;
+  usd_balance?: number;
+  wallet_number?: string;
 };
 
 type Transaction = {
@@ -118,18 +122,7 @@ export const DashboardPage = () => {
       : identity.name
     : "there";
 
-  // Fetch wallet
-  const { query: walletQuery, result: walletResult } = useList<Wallet>({
-    resource: "wallets",
-    filters: [{ field: "user_id", operator: "eq", value: userId }],
-    pagination: { pageSize: 1 },
-    queryOptions: { enabled: !!userId },
-  });
-
-  const walletLoading = walletQuery.isLoading;
-  const wallet = walletResult.data?.[0];
-
-  // Fetch profile (for KYC status)
+  // Fetch profile (Now handles KYC, Balances, and Wallet ID)
   const { query: profileQuery, result: profileResult } = useList<Profile>({
     resource: "profiles",
     filters: [{ field: "id", operator: "eq", value: userId }],
@@ -140,7 +133,17 @@ export const DashboardPage = () => {
   const profileLoading = profileQuery.isLoading;
   const profile = profileResult.data?.[0];
 
-  // Fetch recent transactions (by wallet_id)
+  // We keep this solely to grab the wallet UUID needed to fetch recent transactions
+  const { query: walletQuery, result: walletResult } = useList<Wallet>({
+    resource: "wallets",
+    filters: [{ field: "user_id", operator: "eq", value: userId }],
+    pagination: { pageSize: 1 },
+    queryOptions: { enabled: !!userId },
+  });
+  
+  const wallet = walletResult.data?.[0];
+
+  // Fetch recent transactions
   const { query: txQuery, result: txResult } = useList<Transaction>({
     resource: "wallet_transactions",
     filters: wallet?.id ? [{ field: "wallet_id", operator: "eq", value: wallet.id }] : [],
@@ -166,6 +169,7 @@ export const DashboardPage = () => {
       <div
         className="relative rounded-2xl p-6 text-white shadow-lg overflow-hidden"
         style={{ background: "linear-gradient(135deg, #1DA1F2 0%, #22C55E 100%)" }}>
+        
         {/* Background decoration */}
         <div
           className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10"
@@ -187,16 +191,20 @@ export const DashboardPage = () => {
 
         <div className="relative">
           <p className="text-white/80 text-sm font-medium mb-1">Available Balance</p>
-          {walletLoading ? (
+          
+          {/* 🚀 UPDATED: Now pulling the real SLE Balance from the Profile */}
+          {profileLoading ? (
             <Skeleton className="h-10 w-48 bg-white/20 mb-1" />
           ) : (
-            <p className="text-4xl font-bold tracking-tight mb-1">{formatBalance(wallet?.balance)}</p>
+            <p className="text-4xl font-bold tracking-tight mb-1">{formatBalance(profile?.sle_balance)}</p>
           )}
-          {walletLoading ? (
+          
+          {/* 🚀 UPDATED: Now pulling the real Wallet ID from the Profile */}
+          {profileLoading ? (
             <Skeleton className="h-4 w-36 bg-white/20" />
           ) : (
             <p className="text-white/70 text-sm font-mono">
-              {wallet?.wallet_number ? `Wallet: ${wallet.wallet_number}` : "No wallet found"}
+              {profile?.wallet_number ? `Wallet ID: SLE-${profile.wallet_number}` : "No wallet found"}
             </p>
           )}
         </div>

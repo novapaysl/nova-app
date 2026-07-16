@@ -1,13 +1,9 @@
+import "./App.css";
 import { Authenticated, Refine } from "@refinedev/core";
-
 import routerProvider, { NavigateToResource, UnsavedChangesNotifier } from "@refinedev/react-router";
-
 import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router";
-
 import { RefineAiErrorComponent } from "@/components/catch-all";
-
 import { useNotificationProvider } from "@/components/refine-ui/notification/use-notification-provider";
-
 import { Toaster } from "@/components/refine-ui/notification/toaster";
 
 import { LoginPage } from "@/pages/auth/login";
@@ -15,9 +11,7 @@ import { RegisterPage } from "@/pages/auth/register";
 import { KYCPage } from "@/pages/kyc";
 
 import { dataProvider } from "@/providers/data";
-
 import { authProvider } from "@/providers/auth";
-
 import { LandingPage } from "@/pages/landing";
 
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
@@ -30,13 +24,19 @@ import { TransactionsPage } from "@/pages/dashboard/transactions";
 import { NotificationsPage } from "@/pages/dashboard/notifications";
 import { SecurityPage } from "@/pages/dashboard/security";
 
+// 🚦 IMPORT THE NEW CHECKOUT PAGE
+import { CheckoutPage } from "@/pages/checkout";
+
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { AdminOverviewPage } from "@/pages/admin";
 import { AdminUsersPage } from "@/pages/admin/users";
 import { AdminKycPage } from "@/pages/admin/kyc";
 import { AdminTransactionsPage } from "@/pages/admin/transactions";
 import { AdminSecurityPage } from "@/pages/admin/security";
-
+console.log("--- 🕵️‍♂️ NOVAPAY ENV DIAGNOSTICS ---");
+console.log("VITE_SUPABASE_URL is:", import.meta.env.VITE_SUPABASE_URL);
+console.log("VITE_SUPABASE_ANON_KEY is:", import.meta.env.VITE_SUPABASE_ANON_KEY);
+console.log("---------------------------------");
 const App = () => {
   return (
     <BrowserRouter>
@@ -98,6 +98,9 @@ const App = () => {
             <Route path="security" element={<AdminSecurityPage />} />
             <Route path="*" element={<RefineAiErrorComponent />} />
           </Route>
+
+          {/* 🚦 REGISTER THE PUBLIC CHECKOUT ROUTE */}
+          <Route path="/pay" element={<CheckoutPage />} />
 
           <Route path="*" element={<RefineAiErrorComponent />} />
         </Routes>

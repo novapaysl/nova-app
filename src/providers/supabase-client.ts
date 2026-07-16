@@ -1,17 +1,11 @@
-import { createClient } from "@refinedev/supabase"
-import type { SupabaseClient } from "@supabase/supabase-js"
+import { createClient } from "@supabase/supabase-js";
 
-import { SUPABASE_KEY, SUPABASE_URL } from "./constants"
+// 🔐 Central Failsafe Initialization
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://failsafe-placeholder.supabase.co";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "failsafe-placeholder-key";
 
-export const supabaseClient: SupabaseClient = createClient(
-  SUPABASE_URL,
-  SUPABASE_KEY,
-  {
-    db: {
-      schema: "public",
-    },
-    auth: {
-      persistSession: true,
-    },
-  },
-)
+if (supabaseUrl === "https://failsafe-placeholder.supabase.co") {
+    console.error("🚨 CRITICAL: Vite could not read VITE_SUPABASE_URL from your .env file!");
+}
+
+export const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);

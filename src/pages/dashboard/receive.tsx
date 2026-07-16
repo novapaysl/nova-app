@@ -1,146 +1,105 @@
-import { useGetIdentity, useList } from "@refinedev/core";
-import { ArrowDownLeft, Copy, QrCode, CheckCircle2 } from "lucide-react";
-import { toast } from "sonner";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import React, { useState, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-type Identity = {
-  id: string;
-  name?: string;
-  email?: string;
-};
+// 🔐 Failsafe initialization
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
-type WalletData = {
-  id: string;
-  user_id: string;
-  wallet_number: string;
-  currency: string;
-  balance: number;
-  wallet_status: string;
-  created_at: string;
-};
+const supabase = (supabaseUrl && supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : {
+      auth: { getUser: async () => ({ data: { user: null } }) },
+      from: () => ({
+        select: () => ({ eq: () => ({ single: async () => ({ data: null }) }) })
+      })
+    } as any;
 
 export const ReceiveMoneyPage = () => {
-  const { data: identity } = useGetIdentity<Identity>();
-  const userId = identity?.id;
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState<"SLE" | "USD">("SLE");
+  const [merchantWallet, setMerchantWallet] = useState("");
+  const [secureLink, setSecureLink] = useState("");
 
-  const { query: walletQuery, result: walletResult } = useList<WalletData>({
-    resource: "wallets",
-    filters: [{ field: "user_id", operator: "eq", value: userId }],
-    pagination: { pageSize: 1 },
-    queryOptions: { enabled: !!userId },
-  });
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }: any) => {
+      if (user) {
+        supabase
+          .from("profiles")
+          .select("wallet_number")
+          .eq("id", user.id)
+          .single()
+          .then(({ data }: any) => data && setMerchantWallet(data.wallet_number));
+      }
+    });
+  }, []);
 
-  const walletLoading = walletQuery.isLoading;
-  const wallet = walletResult.data?.[0] as WalletData | undefined;
+  const handleGenerate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt <= 0) return alert("Please enter a valid amount");
 
-  const copyWalletNumber = () => {
-    if (wallet?.wallet_number) {
-      navigator.clipboard.writeText(wallet.wallet_number).then(() => {
-        toast.success("Wallet number copied!");
-      });
-    }
+    // Dynamic clean URL generator pointing to the public /pay route
+    const baseUrl = window.location.origin;
+    const generatedUrl = `${baseUrl}/pay?to=${merchantWallet}&amount=${amt}&currency=${currency}`;
+    setSecureLink(generatedUrl);
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      {/* Page Heading */}
-      <div className="flex items-center gap-3">
-        <div
-          className="h-10 w-10 rounded-xl flex items-center justify-center"
-          style={{ background: "linear-gradient(135deg, #1DA1F2, #22C55E)" }}>
-          <ArrowDownLeft className="h-5 w-5 text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "Poppins, sans-serif" }}>
-            Receive Money
-          </h1>
-          <p className="text-gray-500 text-sm">Share your wallet number to receive SLE payments</p>
-        </div>
-      </div>
+    <div className="p-6 max-w-md mx-auto text-slate-900 dark:text-white">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+        <h2 className="text-xl font-bold">Request Money</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Create invoice link. Users can pay with credit cards, mobile money, or NovaPay.</p>
 
-      {/* Wallet Details Card */}
-      <div
-        className="relative rounded-2xl p-6 text-white shadow-lg overflow-hidden"
-        style={{ background: "linear-gradient(135deg, #1DA1F2 0%, #22C55E 100%)" }}>
-        {/* Decorative circles */}
-        <div
-          className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10 pointer-events-none"
-          style={{ background: "rgba(255,255,255,0.4)", transform: "translate(35%, -35%)" }}
-        />
-        <div
-          className="absolute bottom-0 left-0 w-48 h-48 rounded-full opacity-10 pointer-events-none"
-          style={{ background: "rgba(255,255,255,0.25)", transform: "translate(-30%, 30%)" }}
-        />
-
-        <div className="relative flex flex-col items-center text-center gap-4">
-          <p className="text-white/80 text-sm font-medium uppercase tracking-widest">Your Wallet Number</p>
-
-          {walletLoading ? (
-            <Skeleton className="h-10 w-56 bg-white/20" />
-          ) : (
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-3xl font-bold tracking-widest">{wallet?.wallet_number ?? "—"}</span>
-              {wallet?.wallet_number && (
-                <button
-                  onClick={copyWalletNumber}
-                  className="p-2 rounded-xl bg-white/20 hover:bg-white/30 transition-colors"
-                  title="Copy wallet number">
-                  <Copy className="h-5 w-5 text-white" />
-                </button>
-              )}
+        <form onSubmit={handleGenerate} className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold block mb-1">Target Credit Wallet</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button 
+                type="button" 
+                onClick={() => setCurrency("SLE")}
+                className={`py-2 text-xs rounded-lg font-medium border transition ${currency === 'SLE' ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-transparent border-slate-200 dark:border-slate-800 text-slate-600'}`}
+              >
+                🇸🇱 SLE Wallet
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setCurrency("USD")}
+                className={`py-2 text-xs rounded-lg font-medium border transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-transparent border-slate-200 dark:border-slate-800 text-slate-600'}`}
+              >
+                💵 USD Wallet
+              </button>
             </div>
-          )}
+          </div>
 
-          <p className="text-white/70 text-xs font-medium">
-            Currency: <span className="text-white font-semibold">SLE — Sierra Leonean Leone</span>
-          </p>
-        </div>
-      </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1">Requested Invoice Amount</label>
+            <input 
+              type="number" 
+              placeholder="0.00" 
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none" 
+              required 
+            />
+          </div>
 
-      {/* QR Code Placeholder */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center gap-3">
-        <div className="w-[200px] h-[200px] rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-2">
-          <QrCode className="h-16 w-16 text-gray-300" />
-        </div>
-        <p className="text-sm text-gray-400 font-medium">QR Code coming soon</p>
-      </div>
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition">
+            Generate Secure Payment Link
+          </button>
+        </form>
 
-      {/* Share Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-        <h2 className="text-base font-bold text-gray-900" style={{ fontFamily: "Poppins, sans-serif" }}>
-          Share your wallet number
-        </h2>
-
-        <Button
-          onClick={copyWalletNumber}
-          disabled={walletLoading || !wallet?.wallet_number}
-          className="w-full h-11 font-semibold text-white flex items-center gap-2"
-          style={{ background: "linear-gradient(135deg, #1DA1F2, #1a91da)" }}>
-          <Copy className="h-4 w-4" />
-          Copy Wallet Number
-        </Button>
-
-        <p className="text-xs text-gray-400 text-center">
-          Share your wallet number with anyone to receive SLE payments instantly
-        </p>
-      </div>
-
-      {/* How to Receive Info Box */}
-      <div className="rounded-xl p-5 space-y-3" style={{ backgroundColor: "#EFF8FF", border: "1px solid #BAE3FD" }}>
-        <h3 className="text-sm font-semibold text-[#1DA1F2]">How to receive money</h3>
-        <ul className="space-y-2">
-          {[
-            "Share your wallet number",
-            "Sender enters your number in Send Money",
-            "Funds arrive instantly in your wallet",
-          ].map((step, i) => (
-            <li key={i} className="flex items-center gap-2.5 text-sm text-gray-700">
-              <CheckCircle2 className="h-4 w-4 flex-shrink-0" style={{ color: "#1DA1F2" }} />
-              {step}
-            </li>
-          ))}
-        </ul>
+        {secureLink && (
+          <div className="mt-6 p-4 rounded-xl border border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/10 space-y-3">
+            <p className="text-xs font-bold text-blue-600 dark:text-blue-400">🔗 Checkout Link Ready:</p>
+            <input type="text" readOnly value={secureLink} className="w-full text-[10px] p-2 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded outline-none" />
+            <button 
+              onClick={() => { navigator.clipboard.writeText(secureLink); alert("Copied to clipboard!"); }}
+              className="w-full py-1.5 text-xs border border-blue-500 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/20 font-semibold transition"
+            >
+              Copy Link 📋
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
