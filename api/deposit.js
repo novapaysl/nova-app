@@ -5,17 +5,23 @@ export default async function handler(req, res) {
 
   let { amount, provider, phoneNumber } = req.body;
 
-  // 🇸🇱 Clean & Format Phone Number to International Format (232...)
-  let cleanPhone = phoneNumber.replace(/\D/g, ''); // strip spaces/dashes
+  // 🇸🇱 Format phone number (Monime requires digits without '+')
+  let cleanPhone = String(phoneNumber || '').replace(/\D/g, ''); 
   if (cleanPhone.startsWith('0')) {
     cleanPhone = '232' + cleanPhone.substring(1);
   } else if (!cleanPhone.startsWith('232')) {
     cleanPhone = '232' + cleanPhone;
   }
 
-  // Support both VITE_ and standard keys from process.env
+  // Get keys from Vercel environment
   const token = process.env.MONIME_ACCESS_TOKEN || process.env.VITE_MONIME_ACCESS_TOKEN;
   const spaceId = process.env.MONIME_SPACE_ID || process.env.VITE_MONIME_SPACE_ID;
+
+  if (!token || !spaceId) {
+    return res.status(500).json({ 
+      error: "Missing Monime Credentials. Please check MONIME_ACCESS_TOKEN and MONIME_SPACE_ID in Vercel settings." 
+    });
+  }
 
   try {
     const response = await fetch("https://api.monime.io/v1/payments", {
@@ -28,7 +34,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         amount: {
           currency: "SLE",
-          value: amount
+          value: Number(amount)
         },
         channel: {
           type: "momo",
@@ -42,18 +48,18 @@ export default async function handler(req, res) {
     const paymentData = await response.json();
 
     if (!response.ok) {
-      console.error("Monime API Error Detail:", paymentData);
-      throw new Error(
+      // Extract specific error message string from Monime response
+      const errMsg = 
         paymentData.messages?.[0] || 
         paymentData.message || 
-        paymentData.error || 
-        "Payment request rejected by Monime"
-      );
+        (typeof paymentData.error === 'string' ? paymentData.error : JSON.stringify(paymentData.error || paymentData));
+
+      return res.status(response.status).json({ error: errMsg });
     }
 
     return res.status(200).json({ success: true, data: paymentData });
     
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 }
