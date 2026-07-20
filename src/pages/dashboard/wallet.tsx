@@ -22,6 +22,12 @@ export const WalletPage = () => {
   const [swapAmount, setSwapAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
+  const [isWalletApproved, setIsWalletApproved] = useState(false);
+
+  // 💰 NEW: Deposit Modal States
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositMethod, setDepositMethod] = useState("Orange Money");
 
   const EXCHANGE_RATE = 22.50;
 
@@ -39,10 +45,9 @@ export const WalletPage = () => {
         return;
       }
 
-      // 🚀 Now everything fetches from ONE table perfectly
       const { data, error } = await supabase
         .from("profiles")
-        .select("sle_balance, usd_balance, wallet_number")
+        .select("sle_balance, usd_balance, wallet_number, wallet_approved")
         .eq("id", user.id)
         .single();
       
@@ -54,12 +59,46 @@ export const WalletPage = () => {
           USD: data.usd_balance || 0.0
         });
         setWalletNumber(data.wallet_number || "UNASSIGNED");
+        setIsWalletApproved(data.wallet_approved || false);
       }
     } catch (err) {
       console.error("Failed to fetch balances:", err);
       setWalletNumber("Error Loading");
     } finally {
       setIsFetching(false);
+    }
+  };
+
+  // 🚀 NEW: Handle Deposit Requests
+  const handleDepositRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(depositAmount);
+    if (isNaN(amt) || amt <= 0) return alert("Please enter a valid amount");
+
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not logged in");
+
+      const { error } = await supabase
+        .from("deposits")
+        .insert([{
+          user_id: user.id,
+          amount: amt,
+          currency: "SLE",
+          payment_method: depositMethod,
+          status: "pending"
+        }]);
+
+      if (error) throw error;
+      
+      alert("✅ Deposit request sent! An admin will review and credit your account shortly.");
+      setShowDepositModal(false);
+      setDepositAmount("");
+    } catch (err: any) {
+      alert(`Deposit Failed: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -106,6 +145,17 @@ export const WalletPage = () => {
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6 text-slate-900 dark:text-white">
       <h2 className="text-2xl font-bold">Your Wallets</h2>
+
+      {!isFetching && !isWalletApproved && (
+        <div className="p-4 bg-orange-100 border border-orange-300 text-orange-900 rounded-xl shadow-sm">
+          <div className="font-bold flex items-center gap-2">
+            <span>⚠️</span> Wallet Pending Admin Approval
+          </div>
+          <p className="text-sm mt-1 opacity-90">
+            Your account must be approved by an administrator before you can transfer funds or access full wallet features.
+          </p>
+        </div>
+      )}
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* SLE WALLET */}
@@ -143,60 +193,121 @@ export const WalletPage = () => {
         </div>
       </div>
 
-      {/* Converter Section */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md mx-auto shadow-sm mt-8">
-        <h3 className="text-lg font-bold">Convert Currencies Instantly</h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Transfer money internally between your SLE and USD accounts.</p>
-        
-        <div className="bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg mb-4 text-sm flex justify-between">
-          <span className="text-slate-500 dark:text-slate-400">Platform Rate:</span>
-          <strong className="text-blue-500">1 USD = {EXCHANGE_RATE} SLE</strong>
-        </div>
-
-        <form onSubmit={handleSwap} className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold block mb-1">Swap Direction</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button 
-                type="button" 
-                onClick={() => setSwapFrom("SLE")}
-                className={`py-2 text-xs rounded-lg font-medium border transition ${swapFrom === 'SLE' ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-transparent text-slate-600 border-slate-200 dark:border-slate-800'}`}
-              >
-                🇸🇱 SLE to 💵 USD
-              </button>
-              <button 
-                type="button" 
-                onClick={() => setSwapFrom("USD")}
-                className={`py-2 text-xs rounded-lg font-medium border transition ${swapFrom === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-transparent text-slate-600 border-slate-200 dark:border-slate-800'}`}
-              >
-                💵 USD to 🇸🇱 SLE
-              </button>
-            </div>
+      {/* 🔒 CONDITIONAL ACTIONS SECTION */}
+      {isWalletApproved ? (
+        <div className="space-y-8 mt-8">
+          
+          {/* 💰 ADD FUNDS BUTTON */}
+          <div className="flex justify-center">
+            <button 
+              onClick={() => setShowDepositModal(true)}
+              className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition"
+            >
+              + Add Funds to Wallet
+            </button>
           </div>
 
-          <div>
-            <label className="text-xs font-semibold block mb-1">Amount ({swapFrom})</label>
-            <input 
-              type="number" 
-              placeholder="0.00" 
-              value={swapAmount}
-              onChange={(e) => setSwapAmount(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-blue-500" 
-              required 
-            />
-          </div>
-
-          {swapAmount && !isNaN(parseFloat(swapAmount)) && (
-            <div className="text-xs bg-blue-50 dark:bg-blue-950/20 p-2 rounded text-blue-600 dark:text-blue-400 font-medium">
-              You will receive: {swapFrom === 'SLE' ? `$${(parseFloat(swapAmount) / EXCHANGE_RATE).toFixed(2)} USD` : `${(parseFloat(swapAmount) * EXCHANGE_RATE).toFixed(2)} SLE`}
+          {/* 💰 DEPOSIT MODAL */}
+          {showDepositModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl w-full max-w-md shadow-xl border border-slate-200 dark:border-slate-800">
+                <h3 className="text-xl font-bold mb-4">Request Deposit</h3>
+                <form onSubmit={handleDepositRequest} className="space-y-4">
+                  <div>
+                    <label className="text-xs font-semibold block mb-1">Amount (SLE)</label>
+                    <input 
+                      type="number" 
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500" 
+                      placeholder="e.g. 500"
+                      required 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold block mb-1">Payment Method</label>
+                    <select 
+                      value={depositMethod}
+                      onChange={(e) => setDepositMethod(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      <option value="Orange Money">Orange Money</option>
+                      <option value="Afrimoney">Afrimoney</option>
+                      <option value="Cash">Cash (In Person)</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button type="button" onClick={() => setShowDepositModal(false)} className="flex-1 py-2 rounded-lg font-bold border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300">Cancel</button>
+                    <button type="submit" disabled={loading} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold">{loading ? "Sending..." : "Confirm"}</button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
 
-          <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition">
-            {loading ? "Converting Balances..." : "Convert Wallets 🔄"}
-          </button>
-        </form>
-      </div>
+          {/* CONVERTER SECTION */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md mx-auto shadow-sm">
+            <h3 className="text-lg font-bold">Convert Currencies Instantly</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Transfer money internally between your SLE and USD accounts.</p>
+            
+            <div className="bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg mb-4 text-sm flex justify-between">
+              <span className="text-slate-500 dark:text-slate-400">Platform Rate:</span>
+              <strong className="text-blue-500">1 USD = {EXCHANGE_RATE} SLE</strong>
+            </div>
+
+            <form onSubmit={handleSwap} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold block mb-1">Swap Direction</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setSwapFrom("SLE")}
+                    className={`py-2 text-xs rounded-lg font-medium border transition ${swapFrom === 'SLE' ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-transparent text-slate-600 border-slate-200 dark:border-slate-800'}`}
+                  >
+                    🇸🇱 SLE to 💵 USD
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setSwapFrom("USD")}
+                    className={`py-2 text-xs rounded-lg font-medium border transition ${swapFrom === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-transparent text-slate-600 border-slate-200 dark:border-slate-800'}`}
+                  >
+                    💵 USD to 🇸🇱 SLE
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold block mb-1">Amount ({swapFrom})</label>
+                <input 
+                  type="number" 
+                  placeholder="0.00" 
+                  value={swapAmount}
+                  onChange={(e) => setSwapAmount(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-blue-500" 
+                  required 
+                />
+              </div>
+
+              {swapAmount && !isNaN(parseFloat(swapAmount)) && (
+                <div className="text-xs bg-blue-50 dark:bg-blue-950/20 p-2 rounded text-blue-600 dark:text-blue-400 font-medium">
+                  You will receive: {swapFrom === 'SLE' ? `$${(parseFloat(swapAmount) / EXCHANGE_RATE).toFixed(2)} USD` : `${(parseFloat(swapAmount) * EXCHANGE_RATE).toFixed(2)} SLE`}
+                </div>
+              )}
+
+              <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition">
+                {loading ? "Converting Balances..." : "Convert Wallets 🔄"}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 max-w-md mx-auto shadow-sm mt-8 text-center opacity-70">
+          <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">🔒 Features Locked</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Deposits and conversions are currently disabled until an admin verifies and approves your account.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

@@ -236,17 +236,17 @@ export const DashboardPage = () => {
           </div>
         </Link>
 
-        {/* Add Funds */}
-        <div
-          className="bg-white rounded-xl p-4 flex flex-col items-center gap-3 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer"
-          onClick={() => toast("Coming soon!", { description: "Add Funds feature is coming soon." })}>
-          <div
-            className="h-12 w-12 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: "#F5F3FF" }}>
-            <Plus className="h-6 w-6" style={{ color: "#7C3AED" }} />
+        {/* 🚀 UPDATED: Add Funds (Now links to the real wallet page) */}
+        <Link to="/wallet" className="group">
+          <div className="bg-white rounded-xl p-4 flex flex-col items-center gap-3 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer">
+            <div
+              className="h-12 w-12 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: "#F5F3FF" }}>
+              <Plus className="h-6 w-6" style={{ color: "#7C3AED" }} />
+            </div>
+            <span className="text-sm font-semibold text-gray-700">Add Funds</span>
           </div>
-          <span className="text-sm font-semibold text-gray-700">Add Funds</span>
-        </div>
+        </Link>
       </div>
 
       {/* Recent Transactions */}

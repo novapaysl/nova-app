@@ -1,10 +1,17 @@
+import React, { useState, useEffect } from "react";
 import { useList } from "@refinedev/core";
-import { Users, Wallet, ArrowLeftRight, ShieldCheck, TrendingUp } from "lucide-react";
+import { Users, Wallet, ArrowLeftRight, ShieldCheck, TrendingUp, CheckCircle } from "lucide-react";
 import { Link } from "react-router";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import { createClient } from "@supabase/supabase-js";
 
 dayjs.extend(relativeTime);
+
+// 🔐 Supabase initialization for direct Admin Actions
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const cardStyle = { backgroundColor: "#1E293B", borderRadius: "0.75rem", border: "1px solid rgba(255,255,255,0.07)" };
 
@@ -49,7 +56,7 @@ function avatarColor(str?: string) {
 }
 
 export const AdminOverviewPage = () => {
-  // ── Stat counts ──────────────────────────────────────────────
+  // ── Stat counts (Your existing Refine logic) ──────────────────
   const { result: totalUsersResult } = useList({
     resource: "profiles",
     pagination: { pageSize: 1 },
@@ -83,6 +90,41 @@ export const AdminOverviewPage = () => {
     pagination: { pageSize: 5 },
     sorters: [{ field: "created_at", order: "desc" }],
   });
+
+  // ── 👑 NEW: Custom Admin Wallet Approval Logic ──────────────────
+  const [pendingWalletUsers, setPendingWalletUsers] = useState<any[]>([]);
+  const [loadingApprovals, setLoadingApprovals] = useState(true);
+
+  useEffect(() => {
+    fetchPendingWallets();
+  }, []);
+
+  const fetchPendingWallets = async () => {
+    setLoadingApprovals(true);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("wallet_approved", false);
+
+    if (!error && data) {
+      setPendingWalletUsers(data);
+    }
+    setLoadingApprovals(false);
+  };
+
+  const approveWallet = async (userId: string) => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ wallet_approved: true })
+      .eq("id", userId);
+
+    if (!error) {
+      alert("✅ User Wallet Approved Successfully!");
+      fetchPendingWallets(); // Refresh the list automatically
+    } else {
+      alert("Error approving user: " + error.message);
+    }
+  };
 
   const statCards = [
     {
@@ -156,6 +198,45 @@ export const AdminOverviewPage = () => {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* 🚀 NEW ACTION SECTION: Pending Wallet Approvals */}
+      <div style={cardStyle} className="p-5 flex flex-col gap-4 border-l-4 border-l-orange-500">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-white flex items-center gap-2">
+            <ShieldCheck size={18} className="text-orange-400" /> Action Required: Pending Wallet Approvals
+          </h2>
+        </div>
+        
+        {loadingApprovals ? (
+          <p className="text-sm text-slate-400 py-2">Scanning for pending wallets...</p>
+        ) : pendingWalletUsers.length === 0 ? (
+          <p className="text-sm text-slate-400 py-4 text-center bg-slate-800/30 rounded-lg border border-slate-700/50">
+            🎉 All caught up! No users are currently waiting for wallet approval.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {pendingWalletUsers.map((user) => (
+              <div key={user.id} className="flex items-center justify-between p-4 bg-slate-800 rounded-lg border border-slate-700">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                    {getInitials(user.full_name)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">{user.full_name || "Unnamed User"}</p>
+                    <p className="text-xs text-slate-400">{user.email}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => approveWallet(user.id)}
+                  className="flex items-center gap-1 bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                >
+                  <CheckCircle size={14} /> Approve
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent Activity */}
