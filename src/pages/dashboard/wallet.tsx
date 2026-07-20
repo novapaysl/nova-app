@@ -20,7 +20,8 @@ export const WalletPage = () => {
   const [walletNumber, setWalletNumber] = useState("Loading...");
   const [swapFrom, setSwapFrom] = useState<"SLE" | "USD">("SLE");
   const [swapAmount, setSwapAmount] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [depositLoading, setDepositLoading] = useState(false); // 👈 Separate loading state
+  const [swapLoading, setSwapLoading] = useState(false);       // 👈 Separate loading state
   const [isFetching, setIsFetching] = useState(true);
   const [isWalletApproved, setIsWalletApproved] = useState(false);
 
@@ -77,17 +78,16 @@ export const WalletPage = () => {
     if (isNaN(amt) || amt <= 0) return alert("Please enter a valid amount");
     if (!phoneNumber) return alert("Please enter your mobile money number");
 
-    setLoading(true);
+    setDepositLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not logged in");
 
-      // 🌐 Route through your serverless function (/api/deposit)
       const response = await fetch("/api/deposit", { 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: Math.round(amt * 100), // convert SLE to minor currency unit (cents)
+          amount: Math.round(amt * 100), // SLE to cents
           provider: depositMethod === "Orange Money" ? "orange" : "afrimoney",
           phoneNumber: phoneNumber
         })
@@ -99,7 +99,6 @@ export const WalletPage = () => {
         throw new Error(paymentData.error || "Backend failed to process request");
       }
 
-      // Log processing transaction record to Supabase
       const { error } = await supabase
         .from("deposits")
         .insert([{
@@ -119,7 +118,7 @@ export const WalletPage = () => {
     } catch (err: any) {
       alert(`Deposit Failed: ${err.message}`);
     } finally {
-      setLoading(false);
+      setDepositLoading(false);
     }
   };
 
@@ -128,7 +127,7 @@ export const WalletPage = () => {
     const amt = parseFloat(swapAmount);
     if (isNaN(amt) || amt <= 0) return alert("Please enter a valid amount");
 
-    setLoading(true);
+    setSwapLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No authenticated user found");
@@ -159,7 +158,7 @@ export const WalletPage = () => {
     } catch (err: any) {
       alert(`Swap Failed: ${err.message}`);
     } finally {
-      setLoading(false);
+      setSwapLoading(false);
     }
   };
 
@@ -246,7 +245,6 @@ export const WalletPage = () => {
                     />
                   </div>
 
-                  {/* Mobile Money Phone Input */}
                   <div>
                     <label className="text-xs font-semibold block mb-1">Mobile Money Number</label>
                     <input 
@@ -273,7 +271,7 @@ export const WalletPage = () => {
                   </div>
                   <div className="flex gap-3 pt-2">
                     <button type="button" onClick={() => setShowDepositModal(false)} className="flex-1 py-2 rounded-lg font-bold border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300">Cancel</button>
-                    <button type="submit" disabled={loading} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold">{loading ? "Sending..." : "Confirm"}</button>
+                    <button type="submit" disabled={depositLoading} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold">{depositLoading ? "Sending..." : "Confirm"}</button>
                   </div>
                 </form>
               </div>
@@ -329,8 +327,8 @@ export const WalletPage = () => {
                 </div>
               )}
 
-              <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition">
-                {loading ? "Converting Balances..." : "Convert Wallets 🔄"}
+              <button type="submit" disabled={swapLoading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition">
+                {swapLoading ? "Converting Balances..." : "Convert Wallets 🔄"}
               </button>
             </form>
           </div>

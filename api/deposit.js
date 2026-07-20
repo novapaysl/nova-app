@@ -1,43 +1,56 @@
 export default async function handler(req, res) {
-  // 1. Only allow POST requests for security
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { amount, provider, phoneNumber } = req.body;
+  let { amount, provider, phoneNumber } = req.body;
+
+  // 🇸🇱 Clean & Format Phone Number to International Format (232...)
+  let cleanPhone = phoneNumber.replace(/\D/g, ''); // strip spaces/dashes
+  if (cleanPhone.startsWith('0')) {
+    cleanPhone = '232' + cleanPhone.substring(1);
+  } else if (!cleanPhone.startsWith('232')) {
+    cleanPhone = '232' + cleanPhone;
+  }
+
+  // Support both VITE_ and standard keys from process.env
+  const token = process.env.MONIME_ACCESS_TOKEN || process.env.VITE_MONIME_ACCESS_TOKEN;
+  const spaceId = process.env.MONIME_SPACE_ID || process.env.VITE_MONIME_SPACE_ID;
 
   try {
-    // 2. Make the request to Monime securely from the Vercel server
-    // Notice we use process.env here because this is a Node.js backend environment!
     const response = await fetch("https://api.monime.io/v1/payments", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.VITE_MONIME_ACCESS_TOKEN}`, 
-        "Monime-Space-Id": process.env.VITE_MONIME_SPACE_ID 
+        "Authorization": `Bearer ${token}`, 
+        "Monime-Space-Id": spaceId 
       },
       body: JSON.stringify({
         amount: {
           currency: "SLE",
-          value: amount // We will convert this to cents on the frontend before sending
+          value: amount
         },
         channel: {
           type: "momo",
           provider: provider,
-          phoneNumber: phoneNumber
+          phoneNumber: cleanPhone
         },
-        reference: `DEP-${Date.now()}` // Unique transaction ID
+        reference: `DEP-${Date.now()}`
       })
     });
 
     const paymentData = await response.json();
 
-    // 3. Catch Monime errors and send them back to the frontend
     if (!response.ok) {
-      throw new Error(paymentData.messages?.[0] || "Payment request failed from Monime");
+      console.error("Monime API Error Detail:", paymentData);
+      throw new Error(
+        paymentData.messages?.[0] || 
+        paymentData.message || 
+        paymentData.error || 
+        "Payment request rejected by Monime"
+      );
     }
 
-    // 4. Send the successful response back to your React app
     return res.status(200).json({ success: true, data: paymentData });
     
   } catch (error) {
