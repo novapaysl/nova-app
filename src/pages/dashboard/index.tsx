@@ -237,7 +237,7 @@ export const DashboardPage = () => {
         </Link>
 
         {/* 🚀 UPDATED: Add Funds (Now links to the real wallet page) */}
-        <Link to="/wallet" className="group">
+        <Link to="/dashboard/wallet" className="group">
           <div className="bg-white rounded-xl p-4 flex flex-col items-center gap-3 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer">
             <div
               className="h-12 w-12 rounded-full flex items-center justify-center"
