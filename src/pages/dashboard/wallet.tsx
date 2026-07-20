@@ -28,7 +28,7 @@ export const WalletPage = () => {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [depositMethod, setDepositMethod] = useState("Orange Money");
-  const [phoneNumber, setPhoneNumber] = useState(""); // 👈 NEW: Phone number state for Monime
+  const [phoneNumber, setPhoneNumber] = useState("");
 
   const EXCHANGE_RATE = 22.50;
 
@@ -70,7 +70,7 @@ export const WalletPage = () => {
     }
   };
 
-  // 🚀 Handle Live Deposit Requests via Monime
+  // 🚀 Handle Live Deposit Requests via Secure Vercel API Route
   const handleDepositRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(depositAmount);
@@ -82,37 +82,24 @@ export const WalletPage = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not logged in");
 
-      // LIVE API CALL TO MONIME
-      // Note: For this to work directly from the frontend during testing, 
-      // your token in the .env file must temporarily start with VITE_ (e.g., VITE_MONIME_ACCESS_TOKEN)
-      const response = await fetch("https://api.monime.io/v1/payments", { 
+      // 🌐 Route through your serverless function (/api/deposit)
+      const response = await fetch("/api/deposit", { 
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${import.meta.env.VITE_MONIME_ACCESS_TOKEN}`, 
-          "Monime-Space-Id": import.meta.env.VITE_MONIME_SPACE_ID 
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: {
-            currency: "SLE",
-            value: Math.round(amt * 100) // Monime requires the amount in cents
-          },
-          channel: {
-            type: "momo",
-            provider: depositMethod === "Orange Money" ? "orange" : "afrimoney",
-            phoneNumber: phoneNumber
-          },
-          reference: `DEP-${Date.now()}` 
+          amount: Math.round(amt * 100), // convert SLE to minor currency unit (cents)
+          provider: depositMethod === "Orange Money" ? "orange" : "afrimoney",
+          phoneNumber: phoneNumber
         })
       });
 
       const paymentData = await response.json();
 
       if (!response.ok) {
-        throw new Error(paymentData.messages?.[0] || "Payment request failed from Monime");
+        throw new Error(paymentData.error || "Backend failed to process request");
       }
 
-      // Log the processing transaction to Supabase
+      // Log processing transaction record to Supabase
       const { error } = await supabase
         .from("deposits")
         .insert([{
@@ -259,7 +246,7 @@ export const WalletPage = () => {
                     />
                   </div>
 
-                  {/* 👈 NEW: Phone Number Input */}
+                  {/* Mobile Money Phone Input */}
                   <div>
                     <label className="text-xs font-semibold block mb-1">Mobile Money Number</label>
                     <input 
