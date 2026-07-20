@@ -24,10 +24,11 @@ export const WalletPage = () => {
   const [isFetching, setIsFetching] = useState(true);
   const [isWalletApproved, setIsWalletApproved] = useState(false);
 
-  // 💰 NEW: Deposit Modal States
+  // 💰 Deposit Modal States
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [depositMethod, setDepositMethod] = useState("Orange Money");
+  const [phoneNumber, setPhoneNumber] = useState(""); // 👈 NEW: Phone number state for Monime
 
   const EXCHANGE_RATE = 22.50;
 
@@ -69,17 +70,49 @@ export const WalletPage = () => {
     }
   };
 
-  // 🚀 NEW: Handle Deposit Requests
+  // 🚀 Handle Live Deposit Requests via Monime
   const handleDepositRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(depositAmount);
     if (isNaN(amt) || amt <= 0) return alert("Please enter a valid amount");
+    if (!phoneNumber) return alert("Please enter your mobile money number");
 
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not logged in");
 
+      // LIVE API CALL TO MONIME
+      // Note: For this to work directly from the frontend during testing, 
+      // your token in the .env file must temporarily start with VITE_ (e.g., VITE_MONIME_ACCESS_TOKEN)
+      const response = await fetch("https://api.monime.io/v1/payments", { 
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${import.meta.env.VITE_MONIME_ACCESS_TOKEN}`, 
+          "Monime-Space-Id": import.meta.env.VITE_MONIME_SPACE_ID 
+        },
+        body: JSON.stringify({
+          amount: {
+            currency: "SLE",
+            value: Math.round(amt * 100) // Monime requires the amount in cents
+          },
+          channel: {
+            type: "momo",
+            provider: depositMethod === "Orange Money" ? "orange" : "afrimoney",
+            phoneNumber: phoneNumber
+          },
+          reference: `DEP-${Date.now()}` 
+        })
+      });
+
+      const paymentData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(paymentData.messages?.[0] || "Payment request failed from Monime");
+      }
+
+      // Log the processing transaction to Supabase
       const { error } = await supabase
         .from("deposits")
         .insert([{
@@ -87,14 +120,15 @@ export const WalletPage = () => {
           amount: amt,
           currency: "SLE",
           payment_method: depositMethod,
-          status: "pending"
+          status: "processing" 
         }]);
 
       if (error) throw error;
       
-      alert("✅ Deposit request sent! An admin will review and credit your account shortly.");
+      alert("✅ Payment requested! Check your phone for the mobile money pin prompt.");
       setShowDepositModal(false);
       setDepositAmount("");
+      setPhoneNumber("");
     } catch (err: any) {
       alert(`Deposit Failed: ${err.message}`);
     } finally {
@@ -224,6 +258,20 @@ export const WalletPage = () => {
                       required 
                     />
                   </div>
+
+                  {/* 👈 NEW: Phone Number Input */}
+                  <div>
+                    <label className="text-xs font-semibold block mb-1">Mobile Money Number</label>
+                    <input 
+                      type="tel" 
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500" 
+                      placeholder="e.g. 077123456"
+                      required 
+                    />
+                  </div>
+
                   <div>
                     <label className="text-xs font-semibold block mb-1">Payment Method</label>
                     <select 
