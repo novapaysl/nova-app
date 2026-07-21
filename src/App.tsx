@@ -24,8 +24,9 @@ import { TransactionsPage } from "@/pages/dashboard/transactions";
 import { NotificationsPage } from "@/pages/dashboard/notifications";
 import { SecurityPage } from "@/pages/dashboard/security";
 
-// 🚦 IMPORT THE NEW CHECKOUT PAGE
+// 🚦 IMPORT THE CHECKOUT AND PAYMENT PAGES
 import { CheckoutPage } from "@/pages/checkout";
+import { PublicPayPage } from "@/pages/PublicPayPage";
 
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { AdminOverviewPage } from "@/pages/admin";
@@ -33,10 +34,12 @@ import { AdminUsersPage } from "@/pages/admin/users";
 import { AdminKycPage } from "@/pages/admin/kyc";
 import { AdminTransactionsPage } from "@/pages/admin/transactions";
 import { AdminSecurityPage } from "@/pages/admin/security";
+
 console.log("--- 🕵️‍♂️ NOVAPAY ENV DIAGNOSTICS ---");
 console.log("VITE_SUPABASE_URL is:", import.meta.env.VITE_SUPABASE_URL);
 console.log("VITE_SUPABASE_ANON_KEY is:", import.meta.env.VITE_SUPABASE_ANON_KEY);
 console.log("---------------------------------");
+
 const App = () => {
   return (
     <BrowserRouter>
@@ -99,8 +102,9 @@ const App = () => {
             <Route path="*" element={<RefineAiErrorComponent />} />
           </Route>
 
-          {/* 🚦 REGISTER THE PUBLIC CHECKOUT ROUTE */}
+          {/* 🚦 REGISTER THE PUBLIC CHECKOUT ROUTES */}
           <Route path="/pay" element={<CheckoutPage />} />
+          <Route path="/pay/:id" element={<PublicPayPage />} />
 
           <Route path="*" element={<RefineAiErrorComponent />} />
         </Routes>
