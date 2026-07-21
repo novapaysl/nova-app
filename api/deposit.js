@@ -3,52 +3,51 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  let { amount, provider, phoneNumber } = req.body;
+  const { amount } = req.body;
 
-  // 🇸🇱 Format phone number (Monime requires digits without '+')
-  let cleanPhone = String(phoneNumber || '').replace(/\D/g, ''); 
-  if (cleanPhone.startsWith('0')) {
-    cleanPhone = '232' + cleanPhone.substring(1);
-  } else if (!cleanPhone.startsWith('232')) {
-    cleanPhone = '232' + cleanPhone;
-  }
-
-  // Get keys from Vercel environment
+  // Get keys from environment variables
   const token = process.env.MONIME_ACCESS_TOKEN || process.env.VITE_MONIME_ACCESS_TOKEN;
   const spaceId = process.env.MONIME_SPACE_ID || process.env.VITE_MONIME_SPACE_ID;
 
   if (!token || !spaceId) {
     return res.status(500).json({ 
-      error: "Missing Monime Credentials. Please check MONIME_ACCESS_TOKEN and MONIME_SPACE_ID in Vercel settings." 
+      error: "Missing Monime Credentials. Check MONIME_ACCESS_TOKEN and MONIME_SPACE_ID in Vercel settings." 
     });
   }
 
   try {
-    const response = await fetch("https://api.monime.io/v1/payments", {
+    // Generate a unique idempotency key for safety
+    const idempotencyKey = `dep-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    // Create a Checkout Session with Monime
+    const response = await fetch("https://api.monime.io/v1/checkout-sessions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`, 
-        "Monime-Space-Id": spaceId 
+        "Monime-Space-Id": spaceId,
+        "Idempotency-Key": idempotencyKey
       },
       body: JSON.stringify({
-        amount: {
-          currency: "SLE",
-          value: Number(amount)
-        },
-        channel: {
-          type: "momo",
-          provider: provider,
-          phoneNumber: cleanPhone
-        },
-        reference: `DEP-${Date.now()}`
+        name: "Wallet Deposit",
+        lineItems: [
+          {
+            name: "NovaPay SLE Deposit",
+            price: {
+              currency: "SLE",
+              value: Number(amount) // value in SLE cents (minor units)
+            },
+            quantity: 1
+          }
+        ],
+        successUrl: "https://nova-app-kappa.vercel.app/dashboard/wallet?status=success",
+        cancelUrl: "https://nova-app-kappa.vercel.app/dashboard/wallet?status=cancelled"
       })
     });
 
     const paymentData = await response.json();
 
     if (!response.ok) {
-      // Extract specific error message string from Monime response
       const errMsg = 
         paymentData.messages?.[0] || 
         paymentData.message || 
@@ -57,6 +56,7 @@ export default async function handler(req, res) {
       return res.status(response.status).json({ error: errMsg });
     }
 
+    // Return the checkout session data (contains redirectUrl)
     return res.status(200).json({ success: true, data: paymentData });
     
   } catch (error) {

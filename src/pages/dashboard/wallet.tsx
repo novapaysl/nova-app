@@ -77,20 +77,18 @@ export const WalletPage = () => {
     e.preventDefault();
     const amt = parseFloat(depositAmount);
     if (isNaN(amt) || amt <= 0) return alert("Please enter a valid amount");
-    if (!phoneNumber) return alert("Please enter your mobile money number");
 
     setDepositLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not logged in");
 
+      // 1. Request a Monime Checkout Session from our Vercel backend
       const response = await fetch("/api/deposit", { 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: Math.round(amt * 100), // SLE to cents
-          provider: depositMethod === "Orange Money" ? "orange" : "afrimoney",
-          phoneNumber: phoneNumber
+          amount: Math.round(amt * 100) // SLE to minor units (cents)
         })
       });
 
@@ -103,7 +101,7 @@ export const WalletPage = () => {
         throw new Error(errorText);
       }
 
-      // Record transaction to Supabase
+      // 2. Record processing transaction to Supabase
       const { error } = await supabase
         .from("deposits")
         .insert([{
@@ -115,11 +113,20 @@ export const WalletPage = () => {
         }]);
 
       if (error) throw error;
-      
-      alert("✅ Payment requested! Check your phone for the mobile money pin prompt.");
-      setShowDepositModal(false);
-      setDepositAmount("");
-      setPhoneNumber("");
+
+      // 3. Get the redirectUrl from Monime response
+      const checkoutUrl = paymentData.data?.result?.redirectUrl || paymentData.data?.redirectUrl;
+
+      if (checkoutUrl) {
+        // Redirect user directly to Monime's secure payment page!
+        window.location.href = checkoutUrl;
+      } else {
+        alert("✅ Deposit initiated! Please check your mobile money app.");
+        setShowDepositModal(false);
+        setDepositAmount("");
+        setPhoneNumber("");
+      }
+
     } catch (err: any) {
       const displayMsg = typeof err?.message === "string" ? err.message : JSON.stringify(err);
       alert(`Deposit Failed: ${displayMsg}`);
@@ -251,6 +258,7 @@ export const WalletPage = () => {
                     />
                   </div>
 
+                  {/* Note: We keep this input so users still state their intent, but Monime will handle the actual secure collection on their portal */}
                   <div>
                     <label className="text-xs font-semibold block mb-1">Mobile Money Number</label>
                     <input 
@@ -277,7 +285,7 @@ export const WalletPage = () => {
                   </div>
                   <div className="flex gap-3 pt-2">
                     <button type="button" onClick={() => setShowDepositModal(false)} className="flex-1 py-2 rounded-lg font-bold border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300">Cancel</button>
-                    <button type="submit" disabled={depositLoading} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold">{depositLoading ? "Sending..." : "Confirm"}</button>
+                    <button type="submit" disabled={depositLoading} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold">{depositLoading ? "Redirecting..." : "Confirm"}</button>
                   </div>
                 </form>
               </div>
