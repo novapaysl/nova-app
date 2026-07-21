@@ -17,8 +17,10 @@ const supabase = (supabaseUrl && supabaseAnonKey)
 export const ReceiveMoneyPage = () => {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"SLE" | "USD">("SLE");
+  const [description, setDescription] = useState("");
   const [merchantWallet, setMerchantWallet] = useState("");
   const [secureLink, setSecureLink] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }: any) => {
@@ -33,15 +35,44 @@ export const ReceiveMoneyPage = () => {
     });
   }, []);
 
-  const handleGenerate = (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(amount);
     if (isNaN(amt) || amt <= 0) return alert("Please enter a valid amount");
+    if (!merchantWallet) return alert("Error: Your merchant wallet has not loaded yet.");
 
-    // Dynamic clean URL generator pointing to the public /pay route
-    const baseUrl = window.location.origin;
-    const generatedUrl = `${baseUrl}/pay?to=${merchantWallet}&amount=${amt}&currency=${currency}`;
-    setSecureLink(generatedUrl);
+    setIsGenerating(true);
+
+    try {
+      // 1. Ensure user is logged in
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("You must be logged in to create a link.");
+
+      // 2. Save the invoice to the payment_links table
+      const { data, error } = await supabase
+        .from("payment_links")
+        .insert({
+          merchant_id: user.id,
+          merchant_wallet: merchantWallet,
+          amount: amt,
+          currency: currency,
+          description: description || "Payment for services"
+        })
+        .select("id")
+        .single();
+
+      if (error) throw error;
+
+      // 3. Generate the clean URL using the secure database ID
+      const baseUrl = window.location.origin;
+      const generatedUrl = `${baseUrl}/pay/${data.id}`;
+      setSecureLink(generatedUrl);
+
+    } catch (err: any) {
+      alert("Failed to generate link: " + err.message);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -83,8 +114,25 @@ export const ReceiveMoneyPage = () => {
             />
           </div>
 
-          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition">
-            Generate Secure Payment Link
+          <div>
+            <label className="text-xs font-semibold block mb-1">Description (Optional)</label>
+            <textarea 
+              placeholder="Enter your text here" 
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={127}
+              rows={3}
+              className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none resize-none" 
+            />
+            <p className="text-[10px] text-slate-400 mt-1">Description can't exceed 127 characters</p>
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={isGenerating}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {isGenerating ? "Generating..." : "Generate Secure Payment Link"}
           </button>
         </form>
 
