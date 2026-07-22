@@ -5,7 +5,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: './',
+  base: '/', // 👈 CHANGED THIS FROM './' TO '/'
   plugins: [
     react(),
     tailwindcss(), // 👈 2. ADDED THE PLUGIN HERE
