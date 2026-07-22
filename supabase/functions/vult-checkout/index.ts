@@ -1,10 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createSign } from "node:crypto";
+import { createSign, constants } from "node:crypto";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Official Vult Endpoints
+const VULT_STAGE_URL = "https://stage.vultme.io/api/merchants/private/v1/payment-links";
+const VULT_PROD_URL = "https://wallet.vultme.io/api/merchants/private/v1/payment-links";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -12,61 +16,75 @@ serve(async (req) => {
   }
 
   try {
-    const { orderId, amount, currency } = await req.json();
+    const { orderId, amount, currency, paymentType } = await req.json();
 
     const merchantId = Deno.env.get("VULT_MERCHANT_ID");
     const privateKeyRaw = Deno.env.get("VULT_PRIVATE_KEY");
 
     if (!merchantId || !privateKeyRaw) {
-      throw new Error("Missing VULT credentials in Supabase secrets.");
+      throw new Error("Missing VULT_MERCHANT_ID or VULT_PRIVATE_KEY in Supabase secrets.");
     }
 
-    // Format PEM key correctly
+    // Standardize PEM key line breaks
     const privateKey = privateKeyRaw.replace(/\\n/g, "\n");
 
-    // Construct Canonical Payload for Vult
-    const payload = JSON.stringify({
-      amount: Number(amount),
-      currency: currency || "SLE",
+    // Build payload exactly as specified in Vult schema
+    const requestBody = {
       merchantId: merchantId,
-      orderId: String(orderId),
-    });
+      type: paymentType || "card", // "card", "vult", "in-app", or "momo"
+      payload: {
+        orderId: String(orderId || crypto.randomUUID()),
+        currency: currency || "SLE",
+        amount: String(amount || "10"),
+      },
+    };
 
-    // Create RSA-SHA512 Signature
+    const bodyString = JSON.stringify(requestBody);
+
+    // Compute RSA-4096 SHA-512 PSS Signature matching Vult signature-gen.js
     const signer = createSign("RSA-SHA512");
-    signer.update(payload);
+    signer.update(bodyString);
     signer.end();
 
     const signature = signer.sign(
       {
         key: privateKey,
-        padding: 6, // RSA_PKCS1_PSS_PADDING
+        padding: constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: constants.RSA_PSS_SALTLEN_DIGEST,
       },
       "base64"
     );
 
-    // Call Vult Checkout API (using official vultme.io domain)
-    const response = await fetch("https://api.vultme.io/v1/checkout", {
+    // Testing Staging environment first
+    const endpoint = VULT_STAGE_URL;
+
+    console.log(`Sending request to Vult (${endpoint})...`);
+
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Vult-Merchant-Id": merchantId,
         "X-Vult-Merchant-Signature": signature,
       },
-      body: payload,
+      body: bodyString,
     });
 
     const responseText = await response.text();
-    console.log("Vult Status Code:", response.status);
-    console.log("Vult Raw Response:", responseText);
+    console.log("Vult Gateway Response Code:", response.status);
+    console.log("Vult Gateway Response Body:", responseText);
 
     if (!response.ok) {
-      throw new Error(`Gateway returned ${response.status}: ${responseText}`);
+      throw new Error(`Gateway Returned (${response.status}): ${responseText}`);
     }
 
-    const data = JSON.parse(responseText);
+    const json = JSON.parse(responseText);
+    const checkoutUrl = json.data?.link || json.data?.code || json.link;
 
-    return new Response(JSON.stringify({ checkoutUrl: data.checkoutUrl }), {
+    if (!checkoutUrl) {
+      throw new Error(`Payment link missing in Vult response: ${responseText}`);
+    }
+
+    return new Response(JSON.stringify({ checkoutUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
