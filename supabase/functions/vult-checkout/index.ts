@@ -1,14 +1,38 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createSign, constants } from "node:crypto";
+import crypto from "node:crypto";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Official Vult Endpoints
-const VULT_STAGE_URL = "https://stage.vultme.io/api/merchants/private/v1/payment-links";
+// Official Production Vult Gateway Endpoint
 const VULT_PROD_URL = "https://wallet.vultme.io/api/merchants/private/v1/payment-links";
+
+/**
+ * Normalizes raw private keys, string escaped newlines, and missing PEM headers
+ */
+function normalizePrivateKey(rawKey: string): string {
+  let key = rawKey.trim();
+
+  // Strip wrapping outer quotes if present
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1);
+  }
+
+  // Convert literal '\n' and carriage returns to actual Unix newlines
+  key = key.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
+
+  // Return if headers already exist
+  if (key.includes("BEGIN PRIVATE KEY") || key.includes("BEGIN RSA PRIVATE KEY")) {
+    return key;
+  }
+
+  // Auto-format raw base64 strings into PKCS#8 standard
+  const cleanBase64 = key.replace(/\s+/g, "");
+  const chunked = cleanBase64.match(/.{1,64}/g)?.join("\n") || cleanBase64;
+  return `-----BEGIN PRIVATE KEY-----\n${chunked}\n-----END PRIVATE KEY-----`;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -16,24 +40,28 @@ serve(async (req) => {
   }
 
   try {
-    const { orderId, amount, currency, paymentType } = await req.json();
+    const { orderId, amount, currency, walletId, paymentType } = await req.json();
 
-    const merchantId = Deno.env.get("VULT_MERCHANT_ID");
+    const envMerchantId = Deno.env.get("VULT_MERCHANT_ID");
     const privateKeyRaw = Deno.env.get("VULT_PRIVATE_KEY");
 
-    if (!merchantId || !privateKeyRaw) {
-      throw new Error("Missing VULT_MERCHANT_ID or VULT_PRIVATE_KEY in Supabase secrets.");
+    if (!privateKeyRaw) {
+      throw new Error("Missing VULT_PRIVATE_KEY in Supabase secrets.");
     }
 
-    // Standardize PEM key line breaks
-    const privateKey = privateKeyRaw.replace(/\\n/g, "\n");
+    const formattedPrivateKey = normalizePrivateKey(privateKeyRaw);
+    const targetMerchantId = (walletId || envMerchantId || "").trim();
 
-    // Build payload exactly as specified in Vult schema
+    if (!targetMerchantId) {
+      throw new Error("Missing VULT_MERCHANT_ID in Supabase secrets or request.");
+    }
+
+    // Vult Payload Specification
     const requestBody = {
-      merchantId: merchantId,
-      type: paymentType || "card", // "card", "vult", "in-app", or "momo"
+      merchantId: targetMerchantId,
+      type: paymentType || "card",
       payload: {
-        orderId: String(orderId || crypto.randomUUID()),
+        orderId: String(orderId || `TOPUP-${crypto.randomUUID().slice(0, 8)}`),
         currency: currency || "SLE",
         amount: String(amount || "10"),
       },
@@ -41,26 +69,27 @@ serve(async (req) => {
 
     const bodyString = JSON.stringify(requestBody);
 
-    // Compute RSA-4096 SHA-512 PSS Signature matching Vult signature-gen.js
-    const signer = createSign("RSA-SHA512");
+// DEBUG: Log exactly what is being signed
+console.log("========= REQUEST BODY =========");
+console.log(bodyString);
+console.log("================================");
+
+// Signature Computation (RSA-SHA512 + PSS Padding)
+const signer = crypto.createSign("RSA-SHA512");
     signer.update(bodyString);
-    signer.end();
 
     const signature = signer.sign(
       {
-        key: privateKey,
-        padding: constants.RSA_PKCS1_PSS_PADDING,
-        saltLength: constants.RSA_PSS_SALTLEN_DIGEST,
+        key: formattedPrivateKey,
+        padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
       },
       "base64"
     );
 
-    // Testing Staging environment first
-    const endpoint = VULT_STAGE_URL;
+    console.log(`[VULT EDGE FUNCTION] Requesting Payment Link...`);
 
-    console.log(`Sending request to Vult (${endpoint})...`);
-
-    const response = await fetch(endpoint, {
+    const response = await fetch(VULT_PROD_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -70,18 +99,44 @@ serve(async (req) => {
     });
 
     const responseText = await response.text();
-    console.log("Vult Gateway Response Code:", response.status);
-    console.log("Vult Gateway Response Body:", responseText);
+
+console.log("========== VULT RESPONSE ==========");
+console.log("Status:", response.status);
+
+console.log("Headers:");
+response.headers.forEach((value, key) => {
+  console.log(`${key}: ${value}`);
+});
+
+console.log("Body:");
+console.log(responseText);
+
+console.log("==================================");
+
+let responseData: any = {};
+
+if (responseText) {
+  try {
+    responseData = JSON.parse(responseText);
+  } catch (_) {
+    // Ignore JSON parsing failure
+  }
+}
+
+if (!response.ok) {
+  throw new Error(`Gateway Rejected (${response.status}): ${responseText}`);
+}
 
     if (!response.ok) {
-      throw new Error(`Gateway Returned (${response.status}): ${responseText}`);
+      throw new Error(
+        responseData.message || responseData.error || `Gateway Rejected (${response.status}): ${responseText}`
+      );
     }
 
-    const json = JSON.parse(responseText);
-    const checkoutUrl = json.data?.link || json.data?.code || json.link;
+    const checkoutUrl = responseData.data?.link || responseData.data?.code || responseData.link;
 
     if (!checkoutUrl) {
-      throw new Error(`Payment link missing in Vult response: ${responseText}`);
+      throw new Error(`Checkout URL missing in response: ${responseText}`);
     }
 
     return new Response(JSON.stringify({ checkoutUrl }), {
@@ -89,7 +144,7 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error: any) {
-    console.error("Vult Edge Function Error:", error.message);
+    console.error("[VULT EDGE FUNCTION ERROR]:", error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 400,
