@@ -52,12 +52,18 @@ serve(async (req) => {
     const xVultSignature = generateVultSignature(bodyString, privateKeyRaw);
 
     // 🚀 PRODUCTION VULT ENDPOINT
-    console.log("Merchant ID:", merchantId);
+   console.log("========== VULT REQUEST ==========");
+console.log("Merchant ID:", merchantId);
+console.log("Request URL:", "https://wallet.vultme.io/api/merchants/private/v1/payment-links");
 console.log("Order Payload:", bodyString);
+console.log("Private Key Loaded:", !!privateKeyRaw);
+console.log("Private Key Length:", privateKeyRaw.length);
+console.log("Signature Length:", xVultSignature.length);
 console.log(
-  "Private Key Loaded:",
-  privateKeyRaw.includes("BEGIN PRIVATE KEY")
+  "Signature Preview:",
+  xVultSignature.substring(0, 30) + "..."
 );
+console.log("==================================");
     const response = await fetch("https://wallet.vultme.io/api/merchants/private/v1/payment-links", {
       method: "POST",
       headers: { 
