@@ -1,20 +1,8 @@
+import { getUserWallets } from "../../providers/wallet";
 import React, { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseClient as supabase } from "../../providers/supabase-client";
 
 // 🔐 Failsafe initialization
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-
-const supabase = (supabaseUrl && supabaseAnonKey)
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : {
-      auth: { getUser: async () => ({ data: { user: null } }) },
-      from: () => ({
-        select: () => ({ eq: () => ({ single: async () => ({ data: null }) }) }),
-        update: () => ({ eq: async () => ({ error: new Error("Client uninitialized.") }) }),
-        insert: () => ({ error: new Error("Client uninitialized.") })
-      })
-    } as any;
 
 export const WalletPage = () => {
   const [balances, setBalances] = useState({ SLE: 0.0, USD: 0.0 });
@@ -29,7 +17,7 @@ export const WalletPage = () => {
   // 💰 Deposit Modal States
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
-  const [depositMethod, setDepositMethod] = useState("Orange Money");
+  const [depositMethod, setDepositMethod] = useState("card");
   const [phoneNumber, setPhoneNumber] = useState("");
 
   const EXCHANGE_RATE = 22.50;
@@ -53,7 +41,19 @@ export const WalletPage = () => {
         .select("sle_balance, usd_balance, wallet_number, wallet_approved")
         .eq("id", user.id)
         .single();
-      
+    try {
+  const wallets = await getUserWallets(user.id);
+
+  if (wallets.length > 0) {
+    console.log("✅ User Wallets:", wallets);
+  } else {
+    console.log("ℹ️ No wallets found for user.");
+  }
+
+} catch (walletError) {
+  console.error("❌ Wallet Service Error:", walletError);
+}
+
       if (error) throw error;
 
       if (data) {
@@ -74,66 +74,57 @@ export const WalletPage = () => {
 
   // 🚀 Handle Live Deposit Requests via Secure Vercel API Route
   const handleDepositRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const amt = parseFloat(depositAmount);
-    if (isNaN(amt) || amt <= 0) return alert("Please enter a valid amount");
+  e.preventDefault();
 
-    setDepositLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not logged in");
+  const amt = parseFloat(depositAmount);
 
-      // 1. Request a Monime Checkout Session from our Vercel backend
-      const response = await fetch("/api/deposit", { 
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: Math.round(amt * 100) // SLE to minor units (cents)
-        })
-      });
+  if (isNaN(amt) || amt <= 0) {
+    alert("Please enter a valid amount");
+    return;
+  }
 
-      const paymentData = await response.json();
+  setDepositLoading(true);
 
-      if (!response.ok) {
-        const errorText = typeof paymentData.error === "object" 
-          ? JSON.stringify(paymentData.error) 
-          : (paymentData.error || "Backend failed to process request");
-        throw new Error(errorText);
-      }
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
 
-      // 2. Record processing transaction to Supabase
-      const { error } = await supabase
-        .from("deposits")
-        .insert([{
-          user_id: user.id,
-          amount: amt,
-          currency: "SLE",
-          payment_method: depositMethod,
-          status: "processing" 
-        }]);
-
-      if (error) throw error;
-
-      // 3. Get the redirectUrl from Monime response
-      const checkoutUrl = paymentData.data?.result?.redirectUrl || paymentData.data?.redirectUrl;
-
-      if (checkoutUrl) {
-        // Redirect user directly to Monime's secure payment page!
-        window.location.href = checkoutUrl;
-      } else {
-        alert("✅ Deposit initiated! Please check your mobile money app.");
-        setShowDepositModal(false);
-        setDepositAmount("");
-        setPhoneNumber("");
-      }
-
-    } catch (err: any) {
-      const displayMsg = typeof err?.message === "string" ? err.message : JSON.stringify(err);
-      alert(`Deposit Failed: ${displayMsg}`);
-    } finally {
-      setDepositLoading(false);
+    if (!user) {
+      throw new Error("Not logged in");
     }
-  };
+
+    const { data, error } = await supabase.functions.invoke("payment-processor", {
+      body: {
+        amount: amt,
+        currency: "SLE",
+        paymentMethod: depositMethod,
+        phoneNumber,
+      },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    console.log("Add Funds Response:", data);
+
+    alert(data?.message || "Deposit request submitted.");
+
+    setShowDepositModal(false);
+    setDepositAmount("");
+    setPhoneNumber("");
+
+  } catch (err: any) {
+    console.error(err);
+
+    alert(
+      typeof err?.message === "string"
+        ? err.message
+        : "Deposit failed."
+    );
+  } finally {
+    setDepositLoading(false);
+  }
+};
 
   const handleSwap = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -278,9 +269,10 @@ export const WalletPage = () => {
                       onChange={(e) => setDepositMethod(e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500"
                     >
-                      <option value="Orange Money">Orange Money</option>
-                      <option value="Afrimoney">Afrimoney</option>
-                      <option value="Cash">Cash (In Person)</option>
+                      <option value="card">Visa / Mastercard</option>
+<option value="orange_money">Orange Money</option>
+<option value="afrimoney">Afrimoney</option>
+<option value="cash">Cash (In Person)</option>
                     </select>
                   </div>
                   <div className="flex gap-3 pt-2">
