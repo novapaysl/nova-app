@@ -52,6 +52,12 @@ serve(async (req) => {
     const xVultSignature = generateVultSignature(bodyString, privateKeyRaw);
 
     // 🚀 PRODUCTION VULT ENDPOINT
+    console.log("Merchant ID:", merchantId);
+console.log("Order Payload:", bodyString);
+console.log(
+  "Private Key Loaded:",
+  privateKeyRaw.includes("BEGIN PRIVATE KEY")
+);
     const response = await fetch("https://wallet.vultme.io/api/merchants/private/v1/payment-links", {
       method: "POST",
       headers: { 
@@ -62,6 +68,10 @@ serve(async (req) => {
     })
 
     const responseText = await response.text();
+    console.log("========== VULT RESPONSE ==========");
+console.log("Status:", response.status);
+console.log("Body:", responseText);
+console.log("==================================");
     let responseData: any = {};
     
     if (responseText) {
