@@ -40,7 +40,7 @@ serve(async (req) => {
     // 🚀 ALIGNED TO VULT'S EXACT OPENAPI SPECIFICATION
     const orderPayload = {
       merchantId: merchantId,
-      type: "card", // Required payment type enum
+      type: "vult", // Required payment type enum
       payload: {
         orderId: `NP-LOAD-${Date.now()}`,
         amount: amount.toString(), // Converted back to a String as required
@@ -50,7 +50,12 @@ serve(async (req) => {
 
     const bodyString = JSON.stringify(orderPayload);
     const xVultSignature = generateVultSignature(bodyString, privateKeyRaw);
-
+console.log("Private Key Length:", privateKeyRaw.length);
+console.log("Signature Length:", xVultSignature.length);
+console.log(
+  "Signature Preview:",
+  xVultSignature.substring(0, 30) + "..."
+);
     // 🚀 PRODUCTION VULT ENDPOINT
    console.log("========== VULT REQUEST ==========");
 console.log("Merchant ID:", merchantId);
