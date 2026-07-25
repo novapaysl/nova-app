@@ -118,7 +118,7 @@ const privateKey = Deno.env.get("VULT_PRIVATE_KEY")!;
 
 const orderPayload = {
   merchantId,
-  type: "card",
+  type: "vult",
   payload: {
     orderId: internalReference,
     amount: amount.toString(),
