@@ -8,6 +8,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const supabase = (supabaseUrl && supabaseAnonKey)
   ? createClient(supabaseUrl, supabaseAnonKey)
   : {
+      auth: { getUser: async () => ({ data: { user: null } }) },
       functions: {
         invoke: async () => ({ data: null, error: new Error("Client uninitialized. Check .env file.") })
       }
@@ -32,23 +33,64 @@ export const SendMoneyPage = () => {
     }
 
     setLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("process-transfer", {
-        body: {
-          source: sourceWallet,
-          destination: destType,
-          recipient: recipient,
-          amount: amt,
-          operator: destType === "momo" ? operator : null
-        }
-      });
 
-      if (error) throw error;
-      alert("🎉 Transfer successfully initiated!");
-      setAmount("");
-      setRecipient("");
+    try {
+      // 1. Get current logged in user
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        alert("Session expired or user not logged in. Please log in again.");
+        setLoading(false);
+        return;
+      }
+
+      // 📱 MOBILE MONEY WITHDRAWAL (Via Vercel + Monime)
+      if (destType === "momo") {
+        const response = await fetch("https://nova-app-kappa.vercel.app/api/monime-withdraw", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            amount: amt,
+            phoneNumber: recipient,
+            provider: operator === "africell" ? "afrimoney" : operator, // Maps 'africell' to 'afrimoney'
+          }),
+        });
+
+        const resData = await response.json();
+
+        if (!response.ok) {
+          throw new Error(resData.error || "Failed to process withdrawal");
+        }
+
+        alert("🎉 Withdrawal successfully initiated! Funds will arrive shortly.");
+        setAmount("");
+        setRecipient("");
+      } 
+      
+      // 🔄 NOVAPAY TO NOVAPAY P2P (Via Supabase Edge Function)
+      else {
+        const { error } = await supabase.functions.invoke("process-transfer", {
+          body: {
+            source: sourceWallet,
+            destination: destType,
+            recipient: recipient,
+            amount: amt,
+            operator: null
+          }
+        });
+
+        if (error) throw error;
+        alert("🎉 NovaPay Transfer successful!");
+        setAmount("");
+        setRecipient("");
+      }
+
     } catch (err: any) {
-      alert(`Transfer Failed: ${err.message}`);
+      console.error("Transfer Error:", err);
+      alert(`Transfer Failed: ${err.message || "An error occurred"}`);
     } finally {
       setLoading(false);
     }
@@ -112,8 +154,7 @@ export const SendMoneyPage = () => {
                 <label className="text-xs font-semibold block mb-1">Select Network Operator *</label>
                 <select value={operator} onChange={(e) => setOperator(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800">
                   <option value="orange">Orange Money (SLE)</option>
-                  <option value="mtn">MTN MoMo (SLE)</option>
-                  <option value="africell">Africell Money (SLE)</option>
+                  <option value="africell">Africell / Afrimoney (SLE)</option>
                 </select>
               </div>
               <div>
