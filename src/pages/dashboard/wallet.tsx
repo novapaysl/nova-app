@@ -2,8 +2,6 @@ import { getUserWallets } from "../../providers/wallet";
 import React, { useState, useEffect } from "react";
 import { supabaseClient as supabase } from "../../providers/supabase-client";
 
-// 🔐 Failsafe initialization
-
 export const WalletPage = () => {
   const [balances, setBalances] = useState({ SLE: 0.0, USD: 0.0 });
   const [walletNumber, setWalletNumber] = useState("Loading...");
@@ -41,25 +39,25 @@ export const WalletPage = () => {
         .select("sle_balance, usd_balance, wallet_number, wallet_approved")
         .eq("id", user.id)
         .single();
-    try {
-  const wallets = await getUserWallets(user.id);
 
-  if (wallets.length > 0) {
-    console.log("✅ User Wallets:", wallets);
-  } else {
-    console.log("ℹ️ No wallets found for user.");
-  }
+      try {
+        const wallets = await getUserWallets(user.id);
 
-} catch (walletError) {
-  console.error("❌ Wallet Service Error:", walletError);
-}
+        if (wallets.length > 0) {
+          console.log("✅ User Wallets:", wallets);
+        } else {
+          console.log("ℹ️ No wallets found for user.");
+        }
+      } catch (walletError) {
+        console.error("❌ Wallet Service Error:", walletError);
+      }
 
       if (error) throw error;
 
       if (data) {
         setBalances({
           SLE: data.sle_balance || 0.0,
-          USD: data.usd_balance || 0.0
+          USD: data.usd_balance || 0.0,
         });
         setWalletNumber(data.wallet_number || "UNASSIGNED");
         setIsWalletApproved(data.wallet_approved || false);
@@ -72,59 +70,70 @@ export const WalletPage = () => {
     }
   };
 
-  // 🚀 Handle Live Deposit Requests via Secure Vercel API Route
+  // 🚀 Handle Live Deposit Requests via Secure Vercel API Route (/api/vult-checkout)
   const handleDepositRequest = async (e: React.FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  const amt = parseFloat(depositAmount);
+    const amt = parseFloat(depositAmount);
 
-  if (isNaN(amt) || amt <= 0) {
-    alert("Please enter a valid amount");
-    return;
-  }
-
-  setDepositLoading(true);
-
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      throw new Error("Not logged in");
+    if (isNaN(amt) || amt <= 0) {
+      alert("Please enter a valid amount");
+      return;
     }
 
-    const { data, error } = await supabase.functions.invoke("payment-processor", {
-      body: {
-        amount: amt,
-        currency: "SLE",
-        paymentMethod: depositMethod,
-        phoneNumber,
-      },
-    });
+    setDepositLoading(true);
 
-    if (error) {
-      throw error;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("Not logged in");
+      }
+
+      // Call our Vercel Serverless Function directly
+      const response = await fetch("/api/vult-checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: amt,
+          currency: "SLE",
+          paymentType: depositMethod, // "card", "orange_money", "afrimoney", etc.
+          phoneNumber,
+          orderId: `NP-LOAD-${Date.now()}`,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Deposit initiation failed");
+      }
+
+      console.log("Vercel Checkout Response:", data);
+
+      if (data.checkoutUrl) {
+        // Redirect user directly to Vult payment checkout link
+        window.location.href = data.checkoutUrl;
+      } else {
+        alert(data?.message || "Deposit request submitted successfully.");
+        setShowDepositModal(false);
+        setDepositAmount("");
+        setPhoneNumber("");
+      }
+    } catch (err: any) {
+      console.error("Deposit Error:", err);
+
+      alert(
+        typeof err?.message === "string"
+          ? err.message
+          : "Deposit failed. Please try again."
+      );
+    } finally {
+      setDepositLoading(false);
     }
-
-    console.log("Add Funds Response:", data);
-
-    alert(data?.message || "Deposit request submitted.");
-
-    setShowDepositModal(false);
-    setDepositAmount("");
-    setPhoneNumber("");
-
-  } catch (err: any) {
-    console.error(err);
-
-    alert(
-      typeof err?.message === "string"
-        ? err.message
-        : "Deposit failed."
-    );
-  } finally {
-    setDepositLoading(false);
-  }
-};
+  };
 
   const handleSwap = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,11 +151,11 @@ export const WalletPage = () => {
       if (swapFrom === "SLE") {
         if (balances.SLE < amt) throw new Error("Insufficient SLE Balance!");
         updatedSLE -= amt;
-        updatedUSD += (amt / EXCHANGE_RATE);
+        updatedUSD += amt / EXCHANGE_RATE;
       } else {
         if (balances.USD < amt) throw new Error("Insufficient USD Balance!");
         updatedUSD -= amt;
-        updatedSLE += (amt * EXCHANGE_RATE);
+        updatedSLE += amt * EXCHANGE_RATE;
       }
 
       const { error } = await supabase
@@ -155,7 +164,7 @@ export const WalletPage = () => {
         .eq("id", user.id);
 
       if (error) throw error;
-      
+
       alert("🔄 Balances swapped successfully!");
       setSwapAmount("");
       fetchBalances();
@@ -180,7 +189,7 @@ export const WalletPage = () => {
           </p>
         </div>
       )}
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* SLE WALLET */}
         <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-lg relative overflow-hidden">
@@ -193,7 +202,7 @@ export const WalletPage = () => {
             <div className="text-right">
               <p className="text-xs opacity-70">Wallet ID</p>
               <p className="font-mono text-sm">
-                {isFetching ? "Loading..." : (walletNumber !== "UNASSIGNED" ? `SLE-${walletNumber}` : walletNumber)}
+                {isFetching ? "Loading..." : walletNumber !== "UNASSIGNED" ? `SLE-${walletNumber}` : walletNumber}
               </p>
             </div>
           </div>
@@ -210,7 +219,7 @@ export const WalletPage = () => {
             <div className="text-right">
               <p className="text-xs opacity-70">Wallet ID</p>
               <p className="font-mono text-sm">
-                {isFetching ? "Loading..." : (walletNumber !== "UNASSIGNED" ? `USD-${walletNumber}` : walletNumber)}
+                {isFetching ? "Loading..." : walletNumber !== "UNASSIGNED" ? `USD-${walletNumber}` : walletNumber}
               </p>
             </div>
           </div>
@@ -220,10 +229,9 @@ export const WalletPage = () => {
       {/* 🔒 CONDITIONAL ACTIONS SECTION */}
       {isWalletApproved ? (
         <div className="space-y-8 mt-8">
-          
           {/* 💰 ADD FUNDS BUTTON */}
           <div className="flex justify-center">
-            <button 
+            <button
               onClick={() => setShowDepositModal(true)}
               className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition"
             >
@@ -239,45 +247,56 @@ export const WalletPage = () => {
                 <form onSubmit={handleDepositRequest} className="space-y-4">
                   <div>
                     <label className="text-xs font-semibold block mb-1">Amount (SLE)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       value={depositAmount}
                       onChange={(e) => setDepositAmount(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500" 
+                      className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500"
                       placeholder="e.g. 500"
-                      required 
+                      required
                     />
                   </div>
 
-                  {/* Note: We keep this input so users still state their intent, but Monime will handle the actual secure collection on their portal */}
                   <div>
                     <label className="text-xs font-semibold block mb-1">Mobile Money Number</label>
-                    <input 
-                      type="tel" 
+                    <input
+                      type="tel"
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500" 
+                      className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500"
                       placeholder="e.g. 077123456"
-                      required 
+                      required
                     />
                   </div>
 
                   <div>
                     <label className="text-xs font-semibold block mb-1">Payment Method</label>
-                    <select 
+                    <select
                       value={depositMethod}
                       onChange={(e) => setDepositMethod(e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-green-500"
                     >
                       <option value="card">Visa / Mastercard</option>
-<option value="orange_money">Orange Money</option>
-<option value="afrimoney">Afrimoney</option>
-<option value="cash">Cash (In Person)</option>
+                      <option value="orange_money">Orange Money</option>
+                      <option value="afrimoney">Afrimoney</option>
+                      <option value="cash">Cash (In Person)</option>
                     </select>
                   </div>
                   <div className="flex gap-3 pt-2">
-                    <button type="button" onClick={() => setShowDepositModal(false)} className="flex-1 py-2 rounded-lg font-bold border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300">Cancel</button>
-                    <button type="submit" disabled={depositLoading} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold">{depositLoading ? "Redirecting..." : "Confirm"}</button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDepositModal(false)}
+                      className="flex-1 py-2 rounded-lg font-bold border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={depositLoading}
+                      className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold"
+                    >
+                      {depositLoading ? "Redirecting..." : "Confirm"}
+                    </button>
                   </div>
                 </form>
               </div>
@@ -287,8 +306,10 @@ export const WalletPage = () => {
           {/* CONVERTER SECTION */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md mx-auto shadow-sm">
             <h3 className="text-lg font-bold">Convert Currencies Instantly</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Transfer money internally between your SLE and USD accounts.</p>
-            
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Transfer money internally between your SLE and USD accounts.
+            </p>
+
             <div className="bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg mb-4 text-sm flex justify-between">
               <span className="text-slate-500 dark:text-slate-400">Platform Rate:</span>
               <strong className="text-blue-500">1 USD = {EXCHANGE_RATE} SLE</strong>
@@ -298,17 +319,25 @@ export const WalletPage = () => {
               <div>
                 <label className="text-xs font-semibold block mb-1">Swap Direction</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => setSwapFrom("SLE")}
-                    className={`py-2 text-xs rounded-lg font-medium border transition ${swapFrom === 'SLE' ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-transparent text-slate-600 border-slate-200 dark:border-slate-800'}`}
+                    className={`py-2 text-xs rounded-lg font-medium border transition ${
+                      swapFrom === "SLE"
+                        ? "border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                        : "bg-transparent text-slate-600 border-slate-200 dark:border-slate-800"
+                    }`}
                   >
                     🇸🇱 SLE to 💵 USD
                   </button>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => setSwapFrom("USD")}
-                    className={`py-2 text-xs rounded-lg font-medium border transition ${swapFrom === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-transparent text-slate-600 border-slate-200 dark:border-slate-800'}`}
+                    className={`py-2 text-xs rounded-lg font-medium border transition ${
+                      swapFrom === "USD"
+                        ? "border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                        : "bg-transparent text-slate-600 border-slate-200 dark:border-slate-800"
+                    }`}
                   >
                     💵 USD to 🇸🇱 SLE
                   </button>
@@ -317,23 +346,30 @@ export const WalletPage = () => {
 
               <div>
                 <label className="text-xs font-semibold block mb-1">Amount ({swapFrom})</label>
-                <input 
-                  type="number" 
-                  placeholder="0.00" 
+                <input
+                  type="number"
+                  placeholder="0.00"
                   value={swapAmount}
                   onChange={(e) => setSwapAmount(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-blue-500" 
-                  required 
+                  className="w-full px-3 py-2 border rounded-lg bg-transparent border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                  required
                 />
               </div>
 
               {swapAmount && !isNaN(parseFloat(swapAmount)) && (
                 <div className="text-xs bg-blue-50 dark:bg-blue-950/20 p-2 rounded text-blue-600 dark:text-blue-400 font-medium">
-                  You will receive: {swapFrom === 'SLE' ? `$${(parseFloat(swapAmount) / EXCHANGE_RATE).toFixed(2)} USD` : `${(parseFloat(swapAmount) * EXCHANGE_RATE).toFixed(2)} SLE`}
+                  You will receive:{" "}
+                  {swapFrom === "SLE"
+                    ? `$${(parseFloat(swapAmount) / EXCHANGE_RATE).toFixed(2)} USD`
+                    : `${(parseFloat(swapAmount) * EXCHANGE_RATE).toFixed(2)} SLE`}
                 </div>
               )}
 
-              <button type="submit" disabled={swapLoading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition">
+              <button
+                type="submit"
+                disabled={swapLoading}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm transition"
+              >
                 {swapLoading ? "Converting Balances..." : "Convert Wallets 🔄"}
               </button>
             </form>
