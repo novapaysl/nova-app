@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 export default async function handler(req, res) {
   // Monime sends webhooks as POST requests
@@ -8,15 +9,36 @@ export default async function handler(req, res) {
 
   try {
     const payload = req.body;
+    const secret = process.env.MONIME_WEBHOOK_SECRET;
     
-    // 🚨 Log the incoming webhook to Vercel so we can inspect it later
+    // Check for the signature in the headers (Monime usually sends it here)
+    const signatureHeader = req.headers['x-monime-signature'] || req.headers['monime-signature'];
+
     console.log("Monime Webhook Received:", JSON.stringify(payload, null, 2));
 
-    // Monime wraps the checkout session object inside their event payload
+    // 🔒 SECURITY CHECK: Verify the HMAC S256 Signature
+    if (secret && signatureHeader) {
+      // Recreate the hash using our secret
+      const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+
+      // Compare our hash with Monime's hash
+      if (expectedSignature !== signatureHeader) {
+        console.error("🚨 SECURITY ALERT: Invalid webhook signature detected. Potential hacker attempt.");
+        return res.status(401).json({ error: 'Unauthorized: Invalid signature' });
+      }
+      
+      console.log("✅ Webhook securely verified! Source is genuinely Monime.");
+    } else if (!secret) {
+      console.warn("⚠️ Missing MONIME_WEBHOOK_SECRET in environment variables.");
+    }
+
+    // Extract the payload details
     const eventType = payload.type || payload.event;
     const sessionData = payload.data || payload; 
     
-    // The "reference" is the orderId we passed to them (e.g. NP-LOAD-12345)
     const orderId = sessionData.reference;
     const status = sessionData.status;
 
@@ -24,16 +46,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing reference/orderId in payload' });
     }
 
-    // We only want to credit the wallet if the payment actually finished
+    // Process the payment if it is completed
     if (eventType === 'checkout_session.completed' || status === 'completed') {
       
-      // Connect to Supabase using the Service Role Key (bypasses RLS)
       const supabase = createClient(
         process.env.VITE_SUPABASE_URL,
         process.env.SUPABASE_SERVICE_ROLE_KEY
       );
 
-      // Call our secure SQL function to credit the user's wallet!
       const { error } = await supabase.rpc('process_vult_webhook', {
         p_order_id: orderId,
         p_vult_request_id: sessionData.id || 'monime-webhook'
@@ -47,7 +67,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true, status: 'processed' });
     }
 
-    // Acknowledge other random events (like 'payment.created') without processing
+    // Acknowledge other events (like cancelled/failed)
     return res.status(200).json({ received: true, note: 'Event ignored' });
 
   } catch (error) {
