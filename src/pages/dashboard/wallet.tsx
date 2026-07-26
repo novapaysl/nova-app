@@ -70,7 +70,7 @@ export const WalletPage = () => {
     }
   };
 
-  // 🚀 Handle Live Deposit Requests via Secure Vercel API Route
+  // 🚀 Handle Live Deposit Requests via Secure Vercel API Routes
   const handleDepositRequest = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -78,6 +78,11 @@ export const WalletPage = () => {
 
     if (isNaN(amt) || amt <= 0) {
       alert("Please enter a valid amount");
+      return;
+    }
+
+    if (depositMethod === "cash") {
+      alert("For cash deposits, please visit our nearest agent or office.");
       return;
     }
 
@@ -93,7 +98,7 @@ export const WalletPage = () => {
       // 1. Generate the unique Order ID
       const newOrderId = `NP-LOAD-${Date.now()}`;
 
-      // 2. Save it to Supabase as 'pending' BEFORE calling Vult
+      // 2. Save it to Supabase as 'pending' BEFORE calling gateways
       const { error: dbError } = await supabase.from('transactions').insert({
         user_id: user.id,
         order_id: newOrderId,
@@ -107,8 +112,13 @@ export const WalletPage = () => {
         throw new Error(`Database error: ${dbError.message}`);
       }
 
-      // 3. Call our Vercel Serverless Function directly
-      const response = await fetch("/api/vult-checkout", {
+      // 3. 🔀 Route to the correct Vercel API based on user selection!
+      const apiUrl = depositMethod === "card" 
+        ? "/api/vult-checkout" 
+        : "/api/monime-checkout";
+
+      // 4. Call our Vercel Serverless Function directly
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -129,7 +139,7 @@ export const WalletPage = () => {
       }
 
       if (data.checkoutUrl) {
-        // Redirect user directly to Vult payment checkout link
+        // Redirect user directly to the payment checkout link (Vult or Monime)
         window.location.href = data.checkoutUrl;
       } else {
         alert(data?.message || "Deposit request submitted successfully.");
