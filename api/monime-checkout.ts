@@ -29,16 +29,23 @@ export default async function handler(req, res) {
         "Content-Type": "application/json",
         "Monime-Space-Id": spaceId,
         "Authorization": `Bearer ${accessToken}`,
-        "Idempotency-Key": orderId // 👈 We just added this!
+        "Idempotency-Key": orderId
       },
+      // 👇 THIS IS THE UPDATED PAYLOAD
       body: JSON.stringify({
-        amount: {
-          currency: "SLE",
-          value: Math.round(amount * 100) // Monime expects minor units (cents)
-        },
-        reference: orderId,
         name: "Wallet Deposit",
-        payment_methods: ["momo"] 
+        reference: orderId,
+        lineItems: [
+          {
+            type: "custom",
+            name: "Fund SLE Wallet",
+            price: {
+              currency: "SLE",
+              value: Math.round(amount * 100) // Monime expects cents
+            },
+            quantity: 1
+          }
+        ]
       }),
     });
 
