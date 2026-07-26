@@ -22,7 +22,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server missing Monime credentials." });
     }
 
-    // 2. Call Monime API (Create Checkout Session or Direct Charge)
+    // 2. Call Monime API
     const monimeResponse = await fetch("https://api.monime.io/v1/checkout-sessions", {
       method: "POST",
       headers: {
@@ -37,20 +37,22 @@ export default async function handler(req, res) {
         },
         reference: orderId,
         name: "Wallet Deposit",
-        // Pass the channel to auto-select Mobile Money
         payment_methods: ["momo"] 
       }),
     });
 
     const data = await monimeResponse.json();
 
+    // 🚨 LOG THE EXACT REASON FOR THE 400 ERROR
+    console.log("RAW MONIME REJECTION:", data);
+
     if (!monimeResponse.ok) {
+      // 🚨 SEND THE EXACT REASON TO THE FRONTEND ALERT BOX
       return res.status(monimeResponse.status).json({ 
-        error: data.message || "Monime Gateway Rejected the request" 
+        error: `Monime Error: ${JSON.stringify(data)}` 
       });
     }
 
-    // Return the hosted checkout URL or USSD push confirmation
     return res.status(200).json({ 
       checkoutUrl: data.redirectUrl || null,
       message: "Mobile Money prompt initiated!"
