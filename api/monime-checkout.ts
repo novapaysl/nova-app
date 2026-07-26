@@ -22,7 +22,10 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server missing Monime credentials." });
     }
 
-   // 2. Call Monime API
+    // Capture the current domain (e.g., nova-app-kappa.vercel.app) to tell Monime where to redirect back
+    const appDomain = req.headers.host ? `https://${req.headers.host}` : "https://nova-app-kappa.vercel.app";
+
+    // 2. Call Monime API
     const monimeResponse = await fetch("https://api.monime.io/v1/checkout-sessions", {
       method: "POST",
       headers: {
@@ -31,17 +34,18 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${accessToken}`,
         "Idempotency-Key": orderId
       },
-      // 👇 THIS IS THE UPDATED PAYLOAD
       body: JSON.stringify({
         name: "Wallet Deposit",
         reference: orderId,
+        successUrl: `${appDomain}/dashboard/wallet`, // Where to go on Success
+        cancelUrl: `${appDomain}/dashboard/wallet`,  // Where to go if they click Cancel
         lineItems: [
           {
             type: "custom",
             name: "Fund SLE Wallet",
             price: {
               currency: "SLE",
-              value: Math.round(amount * 100) // Monime expects cents
+              value: Math.round(amount * 100) 
             },
             quantity: 1
           }
@@ -51,18 +55,15 @@ export default async function handler(req, res) {
 
     const data = await monimeResponse.json();
 
-    // 🚨 LOG THE EXACT REASON FOR THE 400 ERROR
-    console.log("RAW MONIME REJECTION:", data);
-
     if (!monimeResponse.ok) {
-      // 🚨 SEND THE EXACT REASON TO THE FRONTEND ALERT BOX
       return res.status(monimeResponse.status).json({ 
         error: `Monime Error: ${JSON.stringify(data)}` 
       });
     }
 
+    // 3. Extract the redirect URL correctly from data.result.redirectUrl
     return res.status(200).json({ 
-      checkoutUrl: data.redirectUrl || null,
+      checkoutUrl: data?.result?.redirectUrl || null,
       message: "Mobile Money prompt initiated!"
     });
 
