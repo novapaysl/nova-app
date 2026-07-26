@@ -70,7 +70,7 @@ export const WalletPage = () => {
     }
   };
 
-  // 🚀 Handle Live Deposit Requests via Secure Vercel API Route (/api/vult-checkout)
+  // 🚀 Handle Live Deposit Requests via Secure Vercel API Route
   const handleDepositRequest = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -90,7 +90,24 @@ export const WalletPage = () => {
         throw new Error("Not logged in");
       }
 
-      // Call our Vercel Serverless Function directly
+      // 1. Generate the unique Order ID
+      const newOrderId = `NP-LOAD-${Date.now()}`;
+
+      // 2. Save it to Supabase as 'pending' BEFORE calling Vult
+      const { error: dbError } = await supabase.from('transactions').insert({
+        user_id: user.id,
+        order_id: newOrderId,
+        amount: amt,
+        currency: "SLE",
+        payment_method: depositMethod,
+        status: "pending"
+      });
+
+      if (dbError) {
+        throw new Error(`Database error: ${dbError.message}`);
+      }
+
+      // 3. Call our Vercel Serverless Function directly
       const response = await fetch("/api/vult-checkout", {
         method: "POST",
         headers: {
@@ -99,9 +116,9 @@ export const WalletPage = () => {
         body: JSON.stringify({
           amount: amt,
           currency: "SLE",
-          paymentType: depositMethod, // "card", "orange_money", "afrimoney", etc.
+          paymentType: depositMethod,
           phoneNumber,
-          orderId: `NP-LOAD-${Date.now()}`,
+          orderId: newOrderId, // Pass the exact same ID we just saved!
         }),
       });
 
@@ -110,8 +127,6 @@ export const WalletPage = () => {
       if (!response.ok) {
         throw new Error(data.error || "Deposit initiation failed");
       }
-
-      console.log("Vercel Checkout Response:", data);
 
       if (data.checkoutUrl) {
         // Redirect user directly to Vult payment checkout link
@@ -124,7 +139,6 @@ export const WalletPage = () => {
       }
     } catch (err: any) {
       console.error("Deposit Error:", err);
-
       alert(
         typeof err?.message === "string"
           ? err.message
