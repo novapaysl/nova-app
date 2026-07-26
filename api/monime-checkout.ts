@@ -22,18 +22,19 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server missing Monime credentials." });
     }
 
-    // 2. Call Monime API
+   // 2. Call Monime API
     const monimeResponse = await fetch("https://api.monime.io/v1/checkout-sessions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Monime-Space-Id": spaceId,
-        "Authorization": `Bearer ${accessToken}`
+        "Authorization": `Bearer ${accessToken}`,
+        "Idempotency-Key": orderId // 👈 We just added this!
       },
       body: JSON.stringify({
         amount: {
           currency: "SLE",
-          value: Math.round(amount * 100) // Monime often expects minor units (cents)
+          value: Math.round(amount * 100) // Monime expects minor units (cents)
         },
         reference: orderId,
         name: "Wallet Deposit",
