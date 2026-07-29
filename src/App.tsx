@@ -8,6 +8,8 @@ import { Toaster } from "@/components/refine-ui/notification/toaster";
 
 import { LoginPage } from "@/pages/auth/login";
 import { RegisterPage } from "@/pages/auth/register";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import { KYCPage } from "@/pages/kyc";
 
 import { dataProvider } from "@/providers/data";
@@ -62,6 +64,9 @@ const App = () => {
             }>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            {/* Password Reset Routes */}
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
           </Route>
 
           {/* KYC route — authenticated, no dashboard sidebar */}
