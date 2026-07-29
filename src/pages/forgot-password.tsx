@@ -35,15 +35,10 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl text-white">
         <div className="text-center space-y-2">
-          <img 
-            src="/NovaPay Emblem.webp" 
-            alt="NovaPay" 
-            className="w-16 h-16 mx-auto object-contain mb-2" 
-            onError={(e) => {
-              // Fallback if WebP isn't present
-              (e.target as HTMLImageElement).src = "/logo.jpeg";
-            }}
-          />
+          <div className="text-xl font-extrabold tracking-tight mb-2">
+            <span className="text-[#1976D2]">Nova</span>
+            <span className="text-[#4CAF50]">Pay</span>
+          </div>
           <h1 className="text-2xl font-bold">Reset Your Password</h1>
           <p className="text-sm text-slate-400">Enter your registered email to receive a recovery link</p>
         </div>
