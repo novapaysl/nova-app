@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { supabase } from "@/lib/supabase"; // Adjust import path to your supabase client
+import { supabase } from "@/lib/supabase"; 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +35,15 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl text-white">
         <div className="text-center space-y-2">
-          <img src="/logo.jpeg" alt="NovaPay" className="w-12 h-12 mx-auto rounded-xl object-contain" />
+          <img 
+            src="/NovaPay Emblem.webp" 
+            alt="NovaPay" 
+            className="w-16 h-16 mx-auto object-contain mb-2" 
+            onError={(e) => {
+              // Fallback if WebP isn't present
+              (e.target as HTMLImageElement).src = "/logo.jpeg";
+            }}
+          />
           <h1 className="text-2xl font-bold">Reset Your Password</h1>
           <p className="text-sm text-slate-400">Enter your registered email to receive a recovery link</p>
         </div>
