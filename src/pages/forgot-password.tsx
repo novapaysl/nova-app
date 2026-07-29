@@ -19,8 +19,8 @@ export default function ForgotPasswordPage() {
     setMessage(null);
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
+  redirectTo: "https://nova-o90t4y484-nova-pay1.vercel.app/reset-password",
+});
 
     setLoading(false);
 
