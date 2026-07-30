@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
-  // Monime sends webhooks as POST requests
+  // MoniMe sends webhooks as POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
@@ -11,26 +11,23 @@ export default async function handler(req, res) {
     const payload = req.body;
     const secret = process.env.MONIME_WEBHOOK_SECRET;
     
-    // Check for the signature in the headers (Monime usually sends it here)
+    // Check for the signature in the headers
     const signatureHeader = req.headers['x-monime-signature'] || req.headers['monime-signature'];
 
-    console.log("Monime Webhook Received:", JSON.stringify(payload, null, 2));
+    console.log("MoniMe Webhook Received:", JSON.stringify(payload, null, 2));
 
     // 🔒 SECURITY CHECK: Verify the HMAC S256 Signature
     if (secret && signatureHeader) {
-      // Recreate the hash using our secret
       const expectedSignature = crypto
         .createHmac('sha256', secret)
         .update(JSON.stringify(payload))
         .digest('hex');
 
-      // Compare our hash with Monime's hash
       if (expectedSignature !== signatureHeader) {
-        console.error("🚨 SECURITY ALERT: Invalid webhook signature detected. Potential hacker attempt.");
+        console.error("🚨 SECURITY ALERT: Invalid webhook signature detected.");
         return res.status(401).json({ error: 'Unauthorized: Invalid signature' });
       }
-      
-      console.log("✅ Webhook securely verified! Source is genuinely Monime.");
+      console.log("✅ Webhook securely verified! Source is genuinely MoniMe.");
     } else if (!secret) {
       console.warn("⚠️ Missing MONIME_WEBHOOK_SECRET in environment variables.");
     }
@@ -38,25 +35,31 @@ export default async function handler(req, res) {
     // Extract the payload details
     const eventType = payload.type || payload.event;
     const sessionData = payload.data || payload; 
-    
-    const orderId = sessionData.reference;
     const status = sessionData.status;
-
-    if (!orderId) {
-      return res.status(400).json({ error: 'Missing reference/orderId in payload' });
-    }
 
     // Process the payment if it is completed
     if (eventType === 'checkout_session.completed' || status === 'completed') {
       
+      // 1. Extract the amount and the User ID from the payload
+      // MoniMe sometimes nests amount in an object, so we handle both cases safely
+      const amount = sessionData.amount?.value || sessionData.amount;
+      const userId = sessionData.metadata?.supabase_user_id || payload.metadata?.supabase_user_id;
+
+      if (!userId || !amount) {
+         console.error("Missing userId or amount in payload");
+         return res.status(400).json({ error: 'Missing metadata.supabase_user_id or amount' });
+      }
+
+      // 2. Initialize Supabase Admin Client
       const supabase = createClient(
-        process.env.VITE_SUPABASE_URL,
+        process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.SUPABASE_SERVICE_ROLE_KEY
       );
 
-      const { error } = await supabase.rpc('process_vult_webhook', {
-        p_order_id: orderId,
-        p_vult_request_id: sessionData.id || 'monime-webhook'
+      // 3. Call the safe wallet increment function we created!
+      const { error } = await supabase.rpc('increment_wallet_balance', {
+        p_user_id: userId,
+        p_amount: amount
       });
 
       if (error) {
@@ -64,6 +67,7 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'Failed to credit wallet' });
       }
 
+      console.log(`✅ Successfully credited ${amount} to user ${userId}`);
       return res.status(200).json({ received: true, status: 'processed' });
     }
 
