@@ -114,6 +114,7 @@ export const WalletPage = () => {
           paymentType: depositMethod,
           phoneNumber,
           orderId: newOrderId,
+          userId: user.id // 🔥 FIX: Send the user ID to the backend!
         }),
       });
 
