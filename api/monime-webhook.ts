@@ -7,67 +7,79 @@ export default async function handler(req, res) {
 
   try {
     const payload = req.body;
-    console.log("Webhook hit:", JSON.stringify(payload, null, 2));
+    console.log("Webhook hit. Payload:", JSON.stringify(payload, null, 2));
 
     const eventType = payload.type || payload.event;
     const sessionData = payload.data || payload; 
     const status = sessionData.status;
+    
+    // MoniMe sends the orderId back as "reference"
+    const orderId = sessionData.reference; 
 
-    // Only process successful payments
+    if (!orderId) {
+        console.error("No reference/orderId found in webhook payload.");
+        return res.status(400).json({ error: 'Missing orderId' });
+    }
+
     if (eventType === 'checkout_session.completed' || status === 'completed') {
       
-      const amount = sessionData.amount?.value || sessionData.amount;
-      const userId = sessionData.metadata?.supabase_user_id || payload.metadata?.supabase_user_id;
-      const orderId = sessionData.reference;
-
-      if (!userId || !amount) {
-         console.error("Missing userId or amount");
-         return res.status(400).json({ error: 'Missing metadata.supabase_user_id or amount' });
-      }
-
-      // Initialize Supabase Admin (Bypasses RLS)
       const supabase = createClient(
         process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.SUPABASE_SERVICE_ROLE_KEY
       );
 
-      // 1. Get the user's current balance from the profiles table
-      const { data: profile, error: fetchError } = await supabase
+      // 1. Find the pending transaction securely from OUR database
+      const { data: transaction, error: txError } = await supabase
+        .from('transactions')
+        .select('user_id, amount, status')
+        .eq('order_id', orderId)
+        .single();
+
+      if (txError || !transaction) {
+        console.error("Transaction not found in DB:", txError);
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
+
+      // Prevent double-crediting if the webhook fires twice
+      if (transaction.status === 'completed') {
+         console.log("Transaction already processed.");
+         return res.status(200).json({ message: 'Already processed' });
+      }
+
+      const userId = transaction.user_id;
+      const depositAmount = parseFloat(transaction.amount);
+
+      // 2. Get the user's current balance
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('sle_balance')
         .eq('id', userId)
         .single();
 
-      if (fetchError) {
-        console.error("Error fetching profile:", fetchError);
+      if (profileError) {
+        console.error("Profile not found:", profileError);
         return res.status(500).json({ error: 'Profile not found' });
       }
 
-      // 2. Add the new money to their current balance
-      const currentBalance = parseFloat(profile.sle_balance || 0);
-      const depositAmount = parseFloat(amount);
-      const newBalance = currentBalance + depositAmount;
+      const newBalance = parseFloat(profile.sle_balance || 0) + depositAmount;
 
-      // 3. Save the new balance back to the profiles table
-      const { error: updateError } = await supabase
+      // 3. Update Profile Balance
+      const { error: updateProfileError } = await supabase
         .from('profiles')
         .update({ sle_balance: newBalance })
         .eq('id', userId);
 
-      if (updateError) {
-        console.error("Error updating balance:", updateError);
-        return res.status(500).json({ error: 'Failed to credit wallet' });
-      }
+      if (updateProfileError) throw updateProfileError;
 
-      // 4. Update the transaction status to completed
-      if (orderId) {
-        await supabase
-          .from('transactions')
-          .update({ status: 'completed' })
-          .eq('order_id', orderId);
-      }
+      // 4. Mark Transaction as Completed!
+      const { error: updateTxError } = await supabase
+        .from('transactions')
+        .update({ status: 'completed' })
+        .eq('order_id', orderId);
 
-      console.log(`✅ Success! Added ${depositAmount} SLE to user ${userId}`);
+      if (updateTxError) throw updateTxError;
+
+      console.log(`✅ SUCCESS! Added ${depositAmount} SLE to user ${userId}`);
       return res.status(200).json({ received: true, status: 'processed' });
     }
 
